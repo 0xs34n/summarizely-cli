@@ -6,9 +6,11 @@
 
 type Args = {
   url?: string;
+  provider?: string;
   model?: string;
   captionsOnly?: boolean;
   json?: boolean;
+  outputDir?: string;
   help?: boolean;
   version?: boolean;
 };
@@ -25,6 +27,10 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--json") args.json = true;
     else if (a === "--model") {
       args.model = argv[++i];
+    } else if (a === "--provider") {
+      args.provider = argv[++i];
+    } else if (a === "--output-dir") {
+      args.outputDir = argv[++i];
     } else {
       rest.push(a);
     }
@@ -34,7 +40,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 function printHelp() {
-  const msg = `\nSummarizely CLI\n\nUsage:\n  summarizely <youtube-url> [options]\n\nOptions:\n  -h, --help            Show help\n  -v, --version         Show version\n      --model <name>    Model preset (noop now)\n      --captions-only   Force captions-only (placeholder)\n      --json            Output JSON (placeholder)\n`;
+  const msg = `\nSummarizely CLI\n\nUsage:\n  summarizely <youtube-url> [options]\n\nOptions:\n  -h, --help               Show help\n  -v, --version            Show version\n      --provider <name>    Provider: ollama|openai|anthropic|google\n      --model <name>       Model preset (default: qwen2.5:0.5b-instruct for Ollama)\n      --captions-only      Force captions-only (no ASR; v1 doesn\'t do ASR)\n      --output-dir <dir>   Output directory (default: summaries)\n      --json               Output JSON (metadata + content)\n`;
   process.stdout.write(msg);
 }
 
@@ -58,6 +64,14 @@ function isYouTubeUrl(u?: string): boolean {
   }
 }
 
+import { ensureDir, slugify, toIsoCompact, youtubeIdFromUrl, writeLatestCopy } from './utils';
+import { fetchCaptions, getYtDlpInstallHint, hasYtDlp } from './captions';
+import { buildExtractiveMarkdown } from './extractive';
+import { selectProvider, summarizeWithProvider } from './providers';
+import { buildPrompt } from './prompt';
+import path from 'path';
+import fs from 'fs';
+
 async function main() {
   const argv = process.argv.slice(2);
   const args = parseArgs(argv);
@@ -72,27 +86,58 @@ async function main() {
     return;
   }
 
-  // Placeholder execution path
-  const banner = [
-    `task: summarize`,
-    `url: ${args.url}`,
-    `model: ${args.model ?? "default"}`,
-    `captions-only: ${args.captionsOnly ? "yes" : "no"}`,
-    `format: ${args.json ? "json" : "markdown"}`,
-  ].join(" | ");
+  const url = args.url!;
+  const vid = youtubeIdFromUrl(url);
+  const outputDir = args.outputDir || 'summaries';
+
+  // Fetch captions (yt-dlp preferred)
+  const caps = fetchCaptions(url);
+  if (!caps) {
+    const lines: string[] = [];
+    lines.push('Captions not available.');
+    if (!hasYtDlp()) {
+      lines.push('Tip: Install yt-dlp for best results:');
+      lines.push('  ' + getYtDlpInstallHint());
+    }
+    process.stderr.write(lines.join('\n') + '\n');
+    process.exitCode = 4;
+    return;
+  }
+
+  // Provider routing (v1 falls back to extractive if none configured)
+  const choice = selectProvider(process.env);
+  let markdown: string | null = null;
+  if (args.provider) {
+    choice.provider = args.provider as any;
+  }
+  if (choice.provider) {
+    const prompt = buildPrompt(caps, vid || caps.videoId);
+    markdown = await summarizeWithProvider(choice.provider, caps, prompt);
+  }
+  if (!markdown) {
+    markdown = buildExtractiveMarkdown(caps);
+  }
+
+  // Output writing
+  ensureDir(outputDir);
+  const ts = toIsoCompact(new Date());
+  const slug = slugify(caps.title || vid || 'video');
+  const fname = `${ts}-${caps.videoId}-${slug}.md`;
+  const fpath = path.join(outputDir, fname);
+  fs.writeFileSync(fpath, markdown, 'utf8');
+  writeLatestCopy(outputDir, fpath);
 
   if (args.json) {
-    const out = {
-      status: "ok",
-      message: "Summary generation coming soon",
-      url: args.url,
-      model: args.model ?? "default",
-      captionsOnly: !!args.captionsOnly,
-      items: [] as any[],
-    };
-    process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({
+      status: 'ok',
+      path: fpath,
+      provider: choice.provider,
+      url,
+      videoId: caps.videoId,
+      title: caps.title,
+    }, null, 2) + '\n');
   } else {
-    process.stdout.write(`# Summarizely\n\n_${banner}_\n\n> Summary generation coming soon.\n`);
+    process.stdout.write(markdown + '\n');
   }
 }
 
@@ -100,4 +145,3 @@ main().catch((err) => {
   process.stderr.write(`Unexpected error: ${err?.message || err}\n`);
   process.exitCode = 1;
 });
-
