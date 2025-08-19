@@ -1,0 +1,27 @@
+{
+  "name": "summarizely-cli",
+  "version": "0.1.0",
+  "description": "Summarize YouTube links into concise, timestamped digests.",
+  "bin": {
+    "summarizely": "bin/summarizely"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist || rm -rf dist",
+    "prepare": "npm run build",
+    "test": "node -e \"console.log('ok')\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "youtube",
+    "summary",
+    "cli"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

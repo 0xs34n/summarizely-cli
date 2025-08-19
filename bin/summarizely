@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+
+// Thin wrapper to execute built CLI
+// Ensures a stable hashbang regardless of TS compile behavior
+
+import('../dist/cli.js').catch((err) => {
+  console.error('Summarizely CLI is not built yet. Run `npm run build` first.');
+  console.error(err?.message || err);
+  process.exit(1);
+});
+
