@@ -37,7 +37,28 @@ function hasCli(bin: string): boolean {
   } catch { return false; }
 }
 
-export async function summarizeWithProvider(provider: Provider, _cap: Captions, prompt: string, opts?: { model?: string }): Promise<string | null> {
+export class ProviderError extends Error {
+  code:
+    | 'unavailable'
+    | 'timeout'
+    | 'auth'
+    | 'rate_limit'
+    | 'invalid_request'
+    | 'not_found'
+    | 'no_models'
+    | 'unknown';
+  constructor(code: ProviderError['code'], message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export async function summarizeWithProvider(
+  provider: Provider,
+  _cap: Captions,
+  prompt: string,
+  opts?: { model?: string }
+): Promise<string | null> {
   if (provider === 'claude-cli') {
     return runCliCapture('claude', [], prompt, 5 * 60_000);
   }
@@ -47,19 +68,20 @@ export async function summarizeWithProvider(provider: Provider, _cap: Captions, 
   if (provider === 'openai') {
     try {
       const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) return null;
+      if (!apiKey) throw new ProviderError('auth', 'OPENAI_API_KEY is not set');
       const model = opts?.model || 'gpt-4o-mini';
       const text = await openaiChat(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
       return text || null;
-    } catch {
-      return null;
+    } catch (e: any) {
+      if (e instanceof ProviderError) throw e;
+      throw new ProviderError('unknown', e?.message || 'OpenAI error');
     }
   }
   if (provider === 'ollama') {
     try {
       const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
       const model = opts?.model || (await selectOllamaModel(host));
-      if (!model) return null;
+      if (!model) throw new ProviderError('no_models', 'No Ollama models installed');
       const text = await ollamaGenerate(host, model, prompt, {
         temperature: 0.2,
         top_p: 0.9,
@@ -67,8 +89,9 @@ export async function summarizeWithProvider(provider: Provider, _cap: Captions, 
         timeoutMs: 3 * 60_000,
       });
       return text || null;
-    } catch {
-      return null;
+    } catch (e: any) {
+      if (e instanceof ProviderError) throw e;
+      throw new ProviderError('unavailable', e?.message || 'Ollama unavailable');
     }
   }
   // Other providers not implemented in v1
@@ -91,7 +114,12 @@ function runCliCapture(cmd: string, args: string[], input: string, timeoutMs: nu
         if (code === 0 && out.trim().length > 0) resolve(out.trim());
         else resolve(null);
       });
-      child.on('error', () => resolve(null));
+      child.on('error', (error: any) => {
+        if (error && error.code === 'ENOENT') {
+          throw new ProviderError('not_found', `${cmd} CLI not found on PATH`);
+        }
+        resolve(null);
+      });
       child.stdin.write(input);
       child.stdin.end();
     } catch {
@@ -121,8 +149,8 @@ async function listOllamaModels(host: string): Promise<OllamaModel[]> {
     const json = JSON.parse(data || '{}');
     const arr = Array.isArray(json.models) ? json.models : [];
     return arr.map((m: any) => ({ name: m?.name, size: m?.size })).filter((m: any) => typeof m.name === 'string');
-  } catch {
-    return [];
+  } catch (e: any) {
+    throw new ProviderError('unavailable', `Cannot reach Ollama at ${host}`);
   }
 }
 
@@ -137,10 +165,17 @@ async function ollamaGenerate(host: string, model: string, prompt: string, opts:
       top_k: opts.top_k,
     },
   };
-  const res = await httpRequest(host + '/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' } }, JSON.stringify(body), opts.timeoutMs ?? 180000);
+  const res = await httpRequest(
+    host + '/api/generate',
+    { method: 'POST', headers: { 'content-type': 'application/json' } },
+    JSON.stringify(body),
+    opts.timeoutMs ?? 180000
+  );
   const json = JSON.parse(res || '{}');
   return json?.response ?? '';
 }
+
+class HttpError extends Error { status?: number; constructor(status?: number, message?: string) { super(message); this.status = status; } }
 
 function httpRequest(urlStr: string, options: { method?: string; headers?: Record<string, string> }, body?: string, timeoutMs: number = 10000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -162,13 +197,13 @@ function httpRequest(urlStr: string, options: { method?: string; headers?: Recor
           res.on('data', (chunk) => (data += chunk));
           res.on('end', () => {
             if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) resolve(data);
-            else reject(new Error(`HTTP ${res.statusCode}`));
+            else reject(new HttpError(res.statusCode, `HTTP ${res.statusCode}`));
           });
         }
       );
-      req.on('error', reject);
+      req.on('error', (e) => reject(e));
       req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error('timeout'));
+        req.destroy(new HttpError(undefined, 'timeout'));
       });
       if (body) req.write(body);
       req.end();
@@ -334,19 +369,76 @@ async function openaiChat(
       { role: 'user', content: prompt },
     ],
   } as any;
-  const res = await httpRequest('https://api.openai.com/v1/chat/completions',
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'authorization': `Bearer ${apiKey}`,
+  let res: string;
+  try {
+    res = await httpRequest(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'authorization': `Bearer ${apiKey}`,
+        },
       },
-    },
-    JSON.stringify(body),
-    opts.timeoutMs ?? 120000
-  );
+      JSON.stringify(body),
+      opts.timeoutMs ?? 120000
+    );
+  } catch (e: any) {
+    if (e instanceof HttpError) {
+      if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'OpenAI authentication failed');
+      if (e.status === 429) throw new ProviderError('rate_limit', 'OpenAI rate limit exceeded');
+      if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'OpenAI invalid request');
+      if (e.status && e.status >= 500) throw new ProviderError('unavailable', 'OpenAI server error');
+    }
+    if (e?.message === 'timeout') throw new ProviderError('timeout', 'OpenAI request timed out');
+    throw e;
+  }
   const json = JSON.parse(res || '{}');
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content === 'string') return content;
   return '';
+}
+
+// ---- Anthropic (Claude) helpers ----
+export async function anthropicMessages(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  opts: { timeoutMs?: number; temperature?: number }
+): Promise<string> {
+  let res: string;
+  try {
+    const body = {
+      model,
+      max_tokens: 2000,
+      temperature: opts.temperature ?? 0.2,
+      system: 'Return Markdown only. Use only the provided transcript. No fabrication.',
+      messages: [ { role: 'user', content: prompt } ],
+    };
+    res = await httpRequest(
+      'https://api.anthropic.com/v1/messages',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+      },
+      JSON.stringify(body),
+      opts.timeoutMs ?? 120000
+    );
+  } catch (e: any) {
+    if (e instanceof HttpError) {
+      if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'Anthropic authentication failed');
+      if (e.status === 429) throw new ProviderError('rate_limit', 'Anthropic rate limit exceeded');
+      if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'Anthropic invalid request');
+      if (e.status && e.status >= 500) throw new ProviderError('unavailable', 'Anthropic server error');
+    }
+    if (e?.message === 'timeout') throw new ProviderError('timeout', 'Anthropic request timed out');
+    throw e;
+  }
+  const json = JSON.parse(res || '{}');
+  const content = Array.isArray(json?.content) ? json.content.map((p: any) => p?.text || '').join('') : '';
+  return content || '';
 }

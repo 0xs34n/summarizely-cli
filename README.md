@@ -89,6 +89,7 @@ Notes:
   - If no provider available or selected, uses a deterministic extractive summarizer (no LLM) to ensure useful output.
   - Ollama: uses `OLLAMA_HOST` (default `http://127.0.0.1:11434`). If `--model` not set, picks the smallest installed `*instruct` model (prefers `qwen2.5:0.5b-instruct` when available). If no models are installed, we suggest: `ollama pull qwen2.5:0.5b-instruct`.
   - OpenAI: uses `OPENAI_API_KEY`; defaults to `gpt-4o-mini` (non-stream) unless `--model` is provided.
+  - Claude (planned): uses `ANTHROPIC_API_KEY`; defaults to `claude-3-5-sonnet-latest` (non-stream) unless `--model` is provided.
 - Language: English-only in v1; Mandarin and others coming later.
 
 ## Prompt (LLM mode)
@@ -108,6 +109,9 @@ Markdown only. Use only the transcript; no fabrication. Structure with: 1) TL;DR
 - `yt-dlp not found`: install using one of the commands above, then rerun.
 - No provider keys and no Ollama: the CLI will still produce an extractive summary from captions.
 - Output not appearing: ensure you have write permissions to the current directory; use `--output-dir` to change.
+- Ollama unreachable: ensure the daemon is running (`ollama serve`) and `OLLAMA_HOST` is correct.
+- No Ollama models: run `ollama pull qwen2.5:0.5b-instruct`.
+- OpenAI auth errors: set `OPENAI_API_KEY`; rate limit errors may require retrying later or a shorter transcript.
 
 ## Roadmap Fit
 

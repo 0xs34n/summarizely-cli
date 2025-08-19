@@ -81,7 +81,7 @@ function isYouTubeUrl(u?: string): boolean {
 import { ensureDir, slugify, toIsoCompact, youtubeIdFromUrl, writeLatestCopy } from './utils';
 import { fetchCaptions, getYtDlpInstallHint, hasYtDlp } from './captions';
 import { buildExtractiveMarkdown } from './extractive';
-import { selectProvider, summarizeWithProvider } from './providers';
+import { selectProvider, summarizeWithProvider, ProviderError } from './providers';
 import { buildPrompt } from './prompt';
 import path from 'path';
 import fs from 'fs';
@@ -147,7 +147,18 @@ async function main() {
       // ensure a newline after streaming
       process.stdout.write('\n');
     } else {
-      markdown = await summarizeWithProvider(choice.provider as any, caps, prompt, { model: args.model });
+      try {
+        markdown = await summarizeWithProvider(choice.provider as any, caps, prompt, { model: args.model });
+      } catch (e: any) {
+        // Print friendly provider error and fall back to extractive
+        if (e instanceof ProviderError) {
+          const msg = providerErrorMessage(choice.provider as any, e);
+          process.stderr.write(msg + '\n');
+        } else {
+          process.stderr.write(`Provider error: ${e?.message || e}\n`);
+        }
+        markdown = null;
+      }
     }
   }
   if (!markdown) {
@@ -192,3 +203,22 @@ main().catch((err) => {
   process.stderr.write(`Unexpected error: ${err?.message || err}\n`);
   process.exitCode = 1;
 });
+
+function providerErrorMessage(provider: string, e: ProviderError): string {
+  if (provider === 'ollama') {
+    if (e.code === 'no_models') return 'Ollama has no models installed. Try: ollama pull qwen2.5:0.5b-instruct';
+    if (e.code === 'unavailable') return `Cannot reach Ollama at ${process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'}. Is it running?`;
+    if (e.code === 'timeout') return 'Ollama request timed out.';
+  }
+  if (provider === 'openai') {
+    if (e.code === 'auth') return 'OpenAI authentication failed. Set OPENAI_API_KEY.';
+    if (e.code === 'rate_limit') return 'OpenAI rate limit exceeded. Please try again later.';
+    if (e.code === 'invalid_request') return 'OpenAI invalid request. Try a shorter transcript or another model.';
+    if (e.code === 'unavailable') return 'OpenAI server error. Please try again later.';
+    if (e.code === 'timeout') return 'OpenAI request timed out.';
+  }
+  if (provider === 'claude-cli' || provider === 'codex-cli') {
+    if (e.code === 'not_found') return `${provider === 'claude-cli' ? 'Claude' : 'Codex'} CLI not found on PATH.`;
+  }
+  return `Provider error (${provider}): ${e.message}`;
+}
