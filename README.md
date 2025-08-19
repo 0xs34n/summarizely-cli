@@ -43,27 +43,27 @@ Cloud providers (optional): set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGL
 
 Provider order: Ollama → OpenAI → Anthropic → Google → extractive (no LLM).
 
-## External CLI Providers (Planned)
+## External CLI Providers
 
 You can optionally use installed CLIs that already manage authentication on your machine (no API keys in this tool):
 
 - Codex CLI: `codex exec` (stdin)
 - Claude CLI: `claude` (stdin)
 
-Planned usage (next minor release):
+Usage:
 
 ```
-# Use Codex CLI as the LLM provider
+# Use Codex CLI as the LLM provider (stdin)
 summarizely <url> --provider codex-cli
 
-# Use Claude CLI as the LLM provider
+# Use Claude CLI as the LLM provider (stdin)
 summarizely <url> --provider claude-cli
 ```
 
 Notes:
 - We generate a Markdown prompt + transcript and pipe to the chosen CLI via stdin.
 - If the CLI returns a non‑zero exit or times out, we fall back to the extractive summary and show an actionable error.
-- Very long transcripts may exceed CLI limits; chunking is on the roadmap.
+- Very long transcripts may exceed CLI limits; we currently cap the transcript to ~60k characters with a note in the prompt. Chunking is on the roadmap.
 
 ## Development
 

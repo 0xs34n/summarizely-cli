@@ -1,6 +1,6 @@
 import { Captions } from './types';
 
-export function buildPrompt(cap: Captions, videoId: string): string {
+export function buildPrompt(cap: Captions, videoId: string, opts?: { maxChars?: number }): string {
   // User-provided style with safety tweaks
   const guide = [
     'You are summarizing a transcript. Use ONLY the provided text; do not invent facts.',
@@ -11,10 +11,15 @@ export function buildPrompt(cap: Captions, videoId: string): string {
     'Keep it clear and readable; adapt length to content.',
   ].join('\n');
 
-  const transcript = cap.segments
+  let transcript = cap.segments
     .map((s) => `${Math.floor(s.start)}\t${s.text.replace(/\s+/g, ' ').trim()}`)
     .join('\n');
+  const max = opts?.maxChars ?? Infinity;
+  let truncNote = '';
+  if (transcript.length > max) {
+    transcript = transcript.slice(0, max);
+    truncNote = `\n\n(Note: transcript truncated to ${max.toLocaleString()} characters for processing.)`;
+  }
 
-  return `Title: ${cap.title}\nURL: ${cap.url}\n\n${guide}\n\nTranscript (seconds\ttext):\n${transcript}`;
+  return `Title: ${cap.title}\nURL: ${cap.url}\n\n${guide}${truncNote}\n\nTranscript (seconds\ttext):\n${transcript}`;
 }
-

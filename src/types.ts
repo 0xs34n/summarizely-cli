@@ -11,5 +11,4 @@ export type Captions = {
   segments: Segment[];
 };
 
-export type Provider = 'ollama' | 'openai' | 'anthropic' | 'google';
-
+export type Provider = 'claude-cli' | 'codex-cli' | 'ollama' | 'openai' | 'anthropic' | 'google';

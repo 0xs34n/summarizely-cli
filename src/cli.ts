@@ -40,7 +40,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 function printHelp() {
-  const msg = `\nSummarizely CLI\n\nUsage:\n  summarizely <youtube-url> [options]\n\nOptions:\n  -h, --help               Show help\n  -v, --version            Show version\n      --provider <name>    Provider: ollama|openai|anthropic|google\n      --model <name>       Model preset (default: qwen2.5:0.5b-instruct for Ollama)\n      --captions-only      Force captions-only (no ASR; v1 doesn\'t do ASR)\n      --output-dir <dir>   Output directory (default: summaries)\n      --json               Output JSON (metadata + content)\n`;
+  const msg = `\nSummarizely CLI\n\nUsage:\n  summarizely <youtube-url> [options]\n\nOptions:\n  -h, --help               Show help\n  -v, --version            Show version\n      --provider <name>    Provider: claude-cli|codex-cli|ollama|openai|anthropic|google\n      --model <name>       Model preset (default: qwen2.5:0.5b-instruct for Ollama)\n      --captions-only      Force captions-only (no ASR; v1 doesn\'t do ASR)\n      --output-dir <dir>   Output directory (default: summaries)\n      --json               Output JSON (metadata + content)\n`;
   process.stdout.write(msg);
 }
 
@@ -111,7 +111,7 @@ async function main() {
     choice.provider = args.provider as any;
   }
   if (choice.provider) {
-    const prompt = buildPrompt(caps, vid || caps.videoId);
+    const prompt = buildPrompt(caps, vid || caps.videoId, { maxChars: 60000 });
     markdown = await summarizeWithProvider(choice.provider, caps, prompt);
   }
   if (!markdown) {
