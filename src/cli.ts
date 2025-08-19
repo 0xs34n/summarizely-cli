@@ -81,7 +81,7 @@ function isYouTubeUrl(u?: string): boolean {
 import { ensureDir, slugify, toIsoCompact, youtubeIdFromUrl, writeLatestCopy } from './utils';
 import { fetchCaptions, getYtDlpInstallHint, hasYtDlp } from './captions';
 import { buildExtractiveMarkdown } from './extractive';
-import { selectProvider, summarizeWithProvider, ProviderError } from './providers';
+import { selectProvider, summarizeWithProvider, ProviderError, formatProviderError } from './providers';
 import { buildPrompt } from './prompt';
 import path from 'path';
 import fs from 'fs';
