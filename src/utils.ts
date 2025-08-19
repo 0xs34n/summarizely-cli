@@ -61,3 +61,10 @@ export function youtubeIdFromUrl(u: string): string | null {
   }
 }
 
+import { Segment } from './types';
+
+export function segmentsToPlainText(segments: Segment[]): string {
+  return segments
+    .map((s) => `[${secondsToHMS(s.start)}] ${s.text.replace(/\s+/g, ' ').trim()}`)
+    .join('\n');
+}

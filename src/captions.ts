@@ -62,12 +62,13 @@ function fetchWithYtDlp(url: string): Captions | null {
   const vttPath = path.join(tmp, vtts[0]);
   const vtt = fs.readFileSync(vttPath, 'utf8');
   const segments: Segment[] = parseVttToSegments(vtt);
+  // cleanup temp dir
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
   if (!segments.length) return null;
-  return { title, videoId, url, segments };
+  return { title, videoId, url, segments, vtt };
 }
 
 function fetchWithJsFallback(_url: string): Captions | null {
   // Placeholder for v1: require yt-dlp for reliability.
   return null;
 }
-

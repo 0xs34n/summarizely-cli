@@ -63,7 +63,7 @@ summarizely <url> --provider claude-cli
 Notes:
 - We generate a Markdown prompt + transcript and pipe to the chosen CLI via stdin.
 - If the CLI returns a non‑zero exit or times out, we fall back to the extractive summary and show an actionable error.
-- Very long transcripts may exceed CLI limits; we currently cap the transcript to ~60k characters with a note in the prompt. Chunking is on the roadmap.
+- Very long transcripts may exceed CLI limits; we apply an adaptive cap for CLI providers (default ~80k chars, configurable via `--max-chars` or disable with `--no-cap`). Chunking is on the roadmap.
 
 ## Development
 
@@ -74,6 +74,9 @@ Notes:
 
 - Files written to `summaries/` (created if missing) with lexicographically sortable names:
   - `YYYY-MM-DDTHH-mm-ssZ-<videoId>-<slug>.md`
+  - `...-transcript.vtt` (original captions), saved by default
+  - `...-transcript.txt` (plain text with timestamps), saved by default
+- Opt out of transcript files with `--no-save-transcript`.
 - Convenience copy at `summaries/latest.md` updated on each run.
 - Unless `--json` is used, the Markdown is also printed to stdout.
 

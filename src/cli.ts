@@ -11,6 +11,9 @@ type Args = {
   captionsOnly?: boolean;
   json?: boolean;
   outputDir?: string;
+  noSaveTranscript?: boolean;
+  maxChars?: number;
+  noCap?: boolean;
   help?: boolean;
   version?: boolean;
 };
@@ -31,6 +34,15 @@ function parseArgs(argv: string[]): Args {
       args.provider = argv[++i];
     } else if (a === "--output-dir") {
       args.outputDir = argv[++i];
+    } else if (a === "--no-save-transcript") {
+      args.noSaveTranscript = true;
+    } else if (a === "--max-chars") {
+      const v = argv[++i];
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) throw new Error("--max-chars requires a positive number");
+      args.maxChars = n;
+    } else if (a === "--no-cap") {
+      args.noCap = true;
     } else {
       rest.push(a);
     }
@@ -111,7 +123,9 @@ async function main() {
     choice.provider = args.provider as any;
   }
   if (choice.provider) {
-    const prompt = buildPrompt(caps, vid || caps.videoId, { maxChars: 60000 });
+    const isCliProvider = choice.provider === 'claude-cli' || choice.provider === 'codex-cli';
+    const maxChars = isCliProvider && !args.noCap ? (args.maxChars ?? 80000) : undefined;
+    const prompt = buildPrompt(caps, vid || caps.videoId, maxChars ? { maxChars } : undefined);
     markdown = await summarizeWithProvider(choice.provider, caps, prompt);
   }
   if (!markdown) {
@@ -126,6 +140,17 @@ async function main() {
   const fpath = path.join(outputDir, fname);
   fs.writeFileSync(fpath, markdown, 'utf8');
   writeLatestCopy(outputDir, fpath);
+  if (!args.noSaveTranscript) {
+    const base = fpath.replace(/\.md$/i, '');
+    try {
+      if ((caps as any).vtt) fs.writeFileSync(base + '-transcript.vtt', (caps as any).vtt, 'utf8');
+    } catch {}
+    try {
+      const { segmentsToPlainText } = await import('./utils');
+      const plain = segmentsToPlainText(caps.segments);
+      fs.writeFileSync(base + '-transcript.txt', plain, 'utf8');
+    } catch {}
+  }
 
   if (args.json) {
     process.stdout.write(JSON.stringify({

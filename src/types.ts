@@ -9,6 +9,7 @@ export type Captions = {
   videoId: string;
   url: string;
   segments: Segment[];
+  vtt?: string; // original VTT content when available
 };
 
 export type Provider = 'claude-cli' | 'codex-cli' | 'ollama' | 'openai' | 'anthropic' | 'google';
