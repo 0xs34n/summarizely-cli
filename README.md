@@ -85,6 +85,7 @@ Notes:
 - Captions: prefers `yt-dlp` (JSON + VTT). If missing, attempts a JS transcript fallback (limited); otherwise prints install guidance.
 - Providers: auto-detects available provider unless `--provider` is set.
   - If no provider available or selected, uses a deterministic extractive summarizer (no LLM) to ensure useful output.
+  - Ollama: uses `OLLAMA_HOST` (default `http://127.0.0.1:11434`). If `--model` not set, picks the smallest installed `*instruct` model (prefers `qwen2.5:0.5b-instruct` when available). If no models are installed, we suggest: `ollama pull qwen2.5:0.5b-instruct`.
 - Language: English-only in v1; Mandarin and others coming later.
 
 ## Prompt (LLM mode)

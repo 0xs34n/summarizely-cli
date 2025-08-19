@@ -126,7 +126,7 @@ async function main() {
     const isCliProvider = choice.provider === 'claude-cli' || choice.provider === 'codex-cli';
     const maxChars = isCliProvider && !args.noCap ? (args.maxChars ?? 80000) : undefined;
     const prompt = buildPrompt(caps, vid || caps.videoId, maxChars ? { maxChars } : undefined);
-    markdown = await summarizeWithProvider(choice.provider, caps, prompt);
+    markdown = await summarizeWithProvider(choice.provider as any, caps, prompt, { model: args.model });
   }
   if (!markdown) {
     markdown = buildExtractiveMarkdown(caps);
