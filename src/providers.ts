@@ -77,6 +77,18 @@ export async function summarizeWithProvider(
       throw new ProviderError('unknown', e?.message || 'OpenAI error');
     }
   }
+  if (provider === 'anthropic') {
+    try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) throw new ProviderError('auth', 'ANTHROPIC_API_KEY is not set');
+      const model = (opts?.model as string) || 'claude-3-5-sonnet-latest';
+      const text = await anthropicMessages(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
+      return text || null;
+    } catch (e: any) {
+      if (e instanceof ProviderError) throw e;
+      throw new ProviderError('unknown', e?.message || 'Anthropic error');
+    }
+  }
   if (provider === 'ollama') {
     try {
       const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';

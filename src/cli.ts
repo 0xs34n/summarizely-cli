@@ -217,6 +217,13 @@ function providerErrorMessage(provider: string, e: ProviderError): string {
     if (e.code === 'unavailable') return 'OpenAI server error. Please try again later.';
     if (e.code === 'timeout') return 'OpenAI request timed out.';
   }
+  if (provider === 'anthropic') {
+    if (e.code === 'auth') return 'Anthropic authentication failed. Set ANTHROPIC_API_KEY.';
+    if (e.code === 'rate_limit') return 'Anthropic rate limit exceeded. Please try again later.';
+    if (e.code === 'invalid_request') return 'Anthropic invalid request. Try a shorter transcript or another model.';
+    if (e.code === 'unavailable') return 'Anthropic server error. Please try again later.';
+    if (e.code === 'timeout') return 'Anthropic request timed out.';
+  }
   if (provider === 'claude-cli' || provider === 'codex-cli') {
     if (e.code === 'not_found') return `${provider === 'claude-cli' ? 'Claude' : 'Codex'} CLI not found on PATH.`;
   }
