@@ -1,13 +1,13 @@
 # Summarizely CLI
 
-Quickly turn a YouTube link into a concise, timestamped summary. This is the CLI slice for Week 1 of the roadmap.
+Quickly turn a YouTube link into a concise, timestamped summary.
 
-Status: v1 scaffold with captions-only flow, extractive summarizer fallback, and provider routing stubs.
+Status: v1 with captions-only flow, extractive summarizer fallback, and provider routing stubs (LLM providers optional).
 
-## Install
+## Quickstart
 
-- Node.js 18+ recommended.
-- Clone this repo, then:
+- Requirements: Node.js 18+, `yt-dlp` (recommended), optional Ollama or API keys.
+- Install deps and build:
 
 ```
 npm install
@@ -41,10 +41,49 @@ Flags:
 
 Cloud providers (optional): set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY`.
 
+Provider order: Ollama → OpenAI → Anthropic → Google → extractive (no LLM).
+
 ## Development
 
 - Build: `npm run build`
 - Test: `npm test` (placeholders and unit tests only)
+
+## Output
+
+- Files written to `summaries/` (created if missing) with lexicographically sortable names:
+  - `YYYY-MM-DDTHH-mm-ssZ-<videoId>-<slug>.md`
+- Convenience copy at `summaries/latest.md` updated on each run.
+- Unless `--json` is used, the Markdown is also printed to stdout.
+
+## Behavior & Fallbacks
+
+- Captions: prefers `yt-dlp` (JSON + VTT). If missing, attempts a JS transcript fallback (limited); otherwise prints install guidance.
+- Providers: auto-detects available provider unless `--provider` is set.
+  - If no provider available or selected, uses a deterministic extractive summarizer (no LLM) to ensure useful output.
+- Language: English-only in v1; Mandarin and others coming later.
+
+## Prompt (LLM mode)
+
+Markdown only. Use only the transcript; no fabrication. Structure with: 1) TL;DR (3–5 bullets), 2) Key Ideas (short paragraphs), 3) Steps/How‑to, 4) Data/Stats (numbers, names), 5) Quotes (with [hh:mm:ss] links), 6) Open Questions. Bold important concepts. Use YouTube links: `https://youtu.be/VIDEO_ID?t=SECONDS`. Keep it clear and readable; adapt length to content.
+
+## Exit Codes
+
+- 2: invalid URL/args
+- 3: missing dependency (e.g., `yt-dlp`) with guidance shown
+- 4: captions unavailable
+- 5: provider error
+- 1: unknown error
+
+## Troubleshooting
+
+- `yt-dlp not found`: install using one of the commands above, then rerun.
+- No provider keys and no Ollama: the CLI will still produce an extractive summary from captions.
+- Output not appearing: ensure you have write permissions to the current directory; use `--output-dir` to change.
+
+## Roadmap Fit
+
+- Week 1: captions-first, Markdown output, snapshot tests
+- Week 3: ASR fallback (Whisper), billing gates
 
 ## Roadmap Fit
 
