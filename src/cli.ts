@@ -10,6 +10,7 @@ type Args = {
   model?: string;
   captionsOnly?: boolean;
   json?: boolean;
+  stream?: boolean;
   outputDir?: string;
   noSaveTranscript?: boolean;
   maxChars?: number;
