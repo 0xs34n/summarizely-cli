@@ -19,14 +19,15 @@ npm link   # optional, to use `summarizely` globally
 
 ```
 summarizely --help
-summarizely https://www.youtube.com/watch?v=VIDEO_ID [--provider ollama|openai|anthropic|google] [--model qwen2.5:0.5b-instruct] [--output-dir summaries] [--json]
+summarizely https://www.youtube.com/watch?v=VIDEO_ID [--provider claude-cli|codex-cli|ollama|openai|anthropic|google] [--model qwen2.5:0.5b-instruct] [--output-dir summaries] [--stream|--json]
 ```
 
 Flags:
-- `--provider <name>`: provider selection; defaults to auto-detect (ollama→openai→anthropic→google→extractive)
+- `--provider <name>`: provider selection; defaults to auto-detect (CLI→Ollama→OpenAI→Anthropic→Google→extractive)
 - `--model <name>`: model preset (default for Ollama: `qwen2.5:0.5b-instruct`)
 - `--output-dir <dir>`: output directory (default `summaries/`)
 - `--captions-only`: force captions path, no ASR (v1 has no ASR anyway)
+- `--stream`: stream provider output live to stdout (mutually exclusive with `--json`)
 - `--json`: output JSON metadata instead of Markdown to stdout (file still written)
 
 ## Dependencies

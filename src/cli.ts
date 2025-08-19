@@ -28,6 +28,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--version" || a === "-v") args.version = true;
     else if (a === "--captions-only") args.captionsOnly = true;
     else if (a === "--json") args.json = true;
+    else if (a === "--stream") args.stream = true;
     else if (a === "--model") {
       args.model = argv[++i];
     } else if (a === "--provider") {
@@ -52,7 +53,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 function printHelp() {
-  const msg = `\nSummarizely CLI\n\nUsage:\n  summarizely <youtube-url> [options]\n\nOptions:\n  -h, --help               Show help\n  -v, --version            Show version\n      --provider <name>    Provider: claude-cli|codex-cli|ollama|openai|anthropic|google\n      --model <name>       Model preset (default: qwen2.5:0.5b-instruct for Ollama)\n      --captions-only      Force captions-only (no ASR; v1 doesn\'t do ASR)\n      --output-dir <dir>   Output directory (default: summaries)\n      --no-save-transcript Do not write transcript .vtt/.txt files next to summary\n      --max-chars <n>      Max transcript chars for CLI providers (default ~80k)\n      --no-cap             Disable transcript cap for CLI providers\n      --json               Output JSON (metadata + content)\n`;
+  const msg = `\nSummarizely CLI\n\nUsage:\n  summarizely <youtube-url> [options]\n\nOptions:\n  -h, --help               Show help\n  -v, --version            Show version\n      --provider <name>    Provider: claude-cli|codex-cli|ollama|openai|anthropic|google\n      --model <name>       Model preset (default: qwen2.5:0.5b-instruct for Ollama)\n      --captions-only      Force captions-only (no ASR; v1 doesn\'t do ASR)\n      --output-dir <dir>   Output directory (default: summaries)\n      --no-save-transcript Do not write transcript .vtt/.txt files next to summary\n      --max-chars <n>      Max transcript chars for CLI providers (default ~80k)\n      --no-cap             Disable transcript cap for CLI providers\n      --stream             Stream provider output to stdout as it generates (no JSON)\n      --json               Output JSON (metadata + content)\n`;
   process.stdout.write(msg);
 }
 
@@ -126,7 +127,27 @@ async function main() {
     const isCliProvider = choice.provider === 'claude-cli' || choice.provider === 'codex-cli';
     const maxChars = isCliProvider && !args.noCap ? (args.maxChars ?? 80000) : undefined;
     const prompt = buildPrompt(caps, vid || caps.videoId, maxChars ? { maxChars } : undefined);
-    markdown = await summarizeWithProvider(choice.provider as any, caps, prompt, { model: args.model });
+    if (args.stream) {
+      if (args.json) {
+        process.stderr.write("--stream and --json cannot be used together.\n");
+        process.exitCode = 2;
+        return;
+      }
+      const { summarizeWithProviderStream } = await import('./providers');
+      const chunks: string[] = [];
+      const out = await summarizeWithProviderStream(choice.provider as any, caps, prompt, {
+        model: args.model,
+        onChunk: (c) => {
+          chunks.push(c);
+          process.stdout.write(c);
+        },
+      });
+      markdown = out ?? (chunks.length ? chunks.join('') : null);
+      // ensure a newline after streaming
+      process.stdout.write('\n');
+    } else {
+      markdown = await summarizeWithProvider(choice.provider as any, caps, prompt, { model: args.model });
+    }
   }
   if (!markdown) {
     markdown = buildExtractiveMarkdown(caps);

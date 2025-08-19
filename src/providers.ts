@@ -166,3 +166,144 @@ function httpRequest(urlStr: string, options: { method?: string; headers?: Recor
     }
   });
 }
+
+// ---- Streaming variants ----
+export async function summarizeWithProviderStream(
+  provider: Provider,
+  _cap: Captions,
+  prompt: string,
+  opts: { model?: string; onChunk: (chunk: string) => void }
+): Promise<string | null> {
+  if (provider === 'claude-cli') {
+    return runCliStream('claude', [], prompt, 5 * 60_000, opts.onChunk);
+  }
+  if (provider === 'codex-cli') {
+    return runCliStream('codex', ['exec'], prompt, 5 * 60_000, opts.onChunk);
+  }
+  if (provider === 'ollama') {
+    try {
+      const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+      const model = opts?.model || (await selectOllamaModel(host));
+      if (!model) return null;
+      return await ollamaGenerateStream(host, model, prompt, {
+        temperature: 0.2,
+        top_p: 0.9,
+        top_k: 40,
+        timeoutMs: 3 * 60_000,
+        onChunk: opts.onChunk,
+      });
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function runCliStream(
+  cmd: string,
+  args: string[],
+  input: string,
+  timeoutMs: number,
+  onChunk: (chunk: string) => void
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      let out = '';
+      let err = '';
+      const t = setTimeout(() => {
+        child.kill('SIGTERM');
+      }, timeoutMs);
+      child.stdout.on('data', (d) => {
+        const s = d.toString();
+        out += s;
+        onChunk(s);
+      });
+      child.stderr.on('data', (d) => {
+        err += d.toString();
+      });
+      child.on('close', (code) => {
+        clearTimeout(t);
+        if (code === 0 && out.trim().length > 0) resolve(out.trim());
+        else resolve(null);
+      });
+      child.on('error', () => resolve(null));
+      child.stdin.write(input);
+      child.stdin.end();
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function ollamaGenerateStream(
+  host: string,
+  model: string,
+  prompt: string,
+  opts: { temperature?: number; top_p?: number; top_k?: number; timeoutMs?: number; onChunk: (chunk: string) => void }
+): Promise<string> {
+  const body = {
+    model,
+    prompt,
+    stream: true,
+    options: {
+      temperature: opts.temperature,
+      top_p: opts.top_p,
+      top_k: opts.top_k,
+    },
+  };
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(host + '/api/generate');
+      const mod = u.protocol === 'https:' ? https : http;
+      const req = mod.request(
+        {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port,
+          path: u.pathname + (u.search || ''),
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        },
+        (res) => {
+          let buf = '';
+          let acc = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk) => {
+            buf += chunk;
+            let idx;
+            while ((idx = buf.indexOf('\n')) >= 0) {
+              const line = buf.slice(0, idx).trim();
+              buf = buf.slice(idx + 1);
+              if (!line) continue;
+              try {
+                const obj = JSON.parse(line);
+                if (typeof obj?.response === 'string' && obj.response.length > 0) {
+                  opts.onChunk(obj.response);
+                  acc += obj.response;
+                }
+                if (obj?.done) {
+                  resolve(acc);
+                }
+              } catch {
+                // ignore parse errors for partial lines
+              }
+            }
+          });
+          res.on('end', () => {
+            // If server ended without done, resolve whatever we have
+            resolve(acc);
+          });
+        }
+      );
+      req.on('error', reject);
+      req.setTimeout(opts.timeoutMs ?? 180000, () => {
+        req.destroy(new Error('timeout'));
+      });
+      req.write(JSON.stringify(body));
+      req.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
