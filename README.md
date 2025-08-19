@@ -90,4 +90,4 @@ Markdown only. Use only the transcript; no fabrication. Structure with: 1) TL;DR
 - Week 1: captions-first, Markdown output, snapshot tests
 - Week 3: ASR fallback (Whisper), billing gates
 
-> License: pending org choice (MIT or Apache-2.0 recommended for CLI). See top-level guidance.
+License: Apache-2.0 — see [LICENSE](./LICENSE).
