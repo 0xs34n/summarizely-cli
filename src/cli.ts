@@ -152,8 +152,7 @@ async function main() {
       } catch (e: any) {
         // Print friendly provider error and fall back to extractive
         if (e instanceof ProviderError) {
-          const msg = providerErrorMessage(choice.provider as any, e);
-          process.stderr.write(msg + '\n');
+          process.stderr.write(formatProviderError(choice.provider as any, e) + '\n');
         } else {
           process.stderr.write(`Provider error: ${e?.message || e}\n`);
         }
@@ -204,28 +203,4 @@ main().catch((err) => {
   process.exitCode = 1;
 });
 
-function providerErrorMessage(provider: string, e: ProviderError): string {
-  if (provider === 'ollama') {
-    if (e.code === 'no_models') return 'Ollama has no models installed. Try: ollama pull qwen2.5:0.5b-instruct';
-    if (e.code === 'unavailable') return `Cannot reach Ollama at ${process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'}. Is it running?`;
-    if (e.code === 'timeout') return 'Ollama request timed out.';
-  }
-  if (provider === 'openai') {
-    if (e.code === 'auth') return 'OpenAI authentication failed. Set OPENAI_API_KEY.';
-    if (e.code === 'rate_limit') return 'OpenAI rate limit exceeded. Please try again later.';
-    if (e.code === 'invalid_request') return 'OpenAI invalid request. Try a shorter transcript or another model.';
-    if (e.code === 'unavailable') return 'OpenAI server error. Please try again later.';
-    if (e.code === 'timeout') return 'OpenAI request timed out.';
-  }
-  if (provider === 'anthropic') {
-    if (e.code === 'auth') return 'Anthropic authentication failed. Set ANTHROPIC_API_KEY.';
-    if (e.code === 'rate_limit') return 'Anthropic rate limit exceeded. Please try again later.';
-    if (e.code === 'invalid_request') return 'Anthropic invalid request. Try a shorter transcript or another model.';
-    if (e.code === 'unavailable') return 'Anthropic server error. Please try again later.';
-    if (e.code === 'timeout') return 'Anthropic request timed out.';
-  }
-  if (provider === 'claude-cli' || provider === 'codex-cli') {
-    if (e.code === 'not_found') return `${provider === 'claude-cli' ? 'Claude' : 'Codex'} CLI not found on PATH.`;
-  }
-  return `Provider error (${provider}): ${e.message}`;
-}
+// Friendly provider error messages are formatted in providers.formatProviderError

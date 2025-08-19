@@ -189,7 +189,7 @@ async function ollamaGenerate(host: string, model: string, prompt: string, opts:
 
 class HttpError extends Error { status?: number; constructor(status?: number, message?: string) { super(message); this.status = status; } }
 
-function httpRequest(urlStr: string, options: { method?: string; headers?: Record<string, string> }, body?: string, timeoutMs: number = 10000): Promise<string> {
+function _httpRequestImpl(urlStr: string, options: { method?: string; headers?: Record<string, string> }, body?: string, timeoutMs: number = 10000): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
       const u = new URL(urlStr);
@@ -224,6 +224,10 @@ function httpRequest(urlStr: string, options: { method?: string; headers?: Recor
     }
   });
 }
+
+// Test hook: allow overriding http requester
+export let httpRequest = _httpRequestImpl;
+export function __setHttpRequest(fn: typeof _httpRequestImpl) { httpRequest = fn; }
 
 // ---- Streaming variants ----
 export async function summarizeWithProviderStream(
@@ -396,7 +400,7 @@ async function openaiChat(
       opts.timeoutMs ?? 120000
     );
   } catch (e: any) {
-    if (e instanceof HttpError) {
+    if (e instanceof HttpError || typeof e?.status === 'number') {
       if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'OpenAI authentication failed');
       if (e.status === 429) throw new ProviderError('rate_limit', 'OpenAI rate limit exceeded');
       if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'OpenAI invalid request');
@@ -441,7 +445,7 @@ export async function anthropicMessages(
       opts.timeoutMs ?? 120000
     );
   } catch (e: any) {
-    if (e instanceof HttpError) {
+    if (e instanceof HttpError || typeof e?.status === 'number') {
       if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'Anthropic authentication failed');
       if (e.status === 429) throw new ProviderError('rate_limit', 'Anthropic rate limit exceeded');
       if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'Anthropic invalid request');
@@ -453,4 +457,31 @@ export async function anthropicMessages(
   const json = JSON.parse(res || '{}');
   const content = Array.isArray(json?.content) ? json.content.map((p: any) => p?.text || '').join('') : '';
   return content || '';
+}
+
+// Friendly error message mapper for CLI
+export function formatProviderError(provider: string, e: ProviderError): string {
+  if (provider === 'ollama') {
+    if (e.code === 'no_models') return 'Ollama has no models installed. Try: ollama pull qwen2.5:0.5b-instruct';
+    if (e.code === 'unavailable') return `Cannot reach Ollama at ${process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'}. Is it running?`;
+    if (e.code === 'timeout') return 'Ollama request timed out.';
+  }
+  if (provider === 'openai') {
+    if (e.code === 'auth') return 'OpenAI authentication failed. Set OPENAI_API_KEY.';
+    if (e.code === 'rate_limit') return 'OpenAI rate limit exceeded. Please try again later.';
+    if (e.code === 'invalid_request') return 'OpenAI invalid request. Try a shorter transcript or another model.';
+    if (e.code === 'unavailable') return 'OpenAI server error. Please try again later.';
+    if (e.code === 'timeout') return 'OpenAI request timed out.';
+  }
+  if (provider === 'anthropic') {
+    if (e.code === 'auth') return 'Anthropic authentication failed. Set ANTHROPIC_API_KEY.';
+    if (e.code === 'rate_limit') return 'Anthropic rate limit exceeded. Please try again later.';
+    if (e.code === 'invalid_request') return 'Anthropic invalid request. Try a shorter transcript or another model.';
+    if (e.code === 'unavailable') return 'Anthropic server error. Please try again later.';
+    if (e.code === 'timeout') return 'Anthropic request timed out.';
+  }
+  if (provider === 'claude-cli' || provider === 'codex-cli') {
+    if (e.code === 'not_found') return `${provider === 'claude-cli' ? 'Claude' : 'Codex'} CLI not found on PATH.`;
+  }
+  return `Provider error (${provider}): ${e.message}`;
 }
