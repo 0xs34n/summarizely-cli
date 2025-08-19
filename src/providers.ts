@@ -44,6 +44,17 @@ export async function summarizeWithProvider(provider: Provider, _cap: Captions, 
   if (provider === 'codex-cli') {
     return runCliCapture('codex', ['exec'], prompt, 5 * 60_000);
   }
+  if (provider === 'openai') {
+    try {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) return null;
+      const model = opts?.model || 'gpt-4o-mini';
+      const text = await openaiChat(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
+      return text || null;
+    } catch {
+      return null;
+    }
+  }
   if (provider === 'ollama') {
     try {
       const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
@@ -306,4 +317,36 @@ async function ollamaGenerateStream(
       reject(e);
     }
   });
+}
+
+// ---- OpenAI helpers ----
+async function openaiChat(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  opts: { timeoutMs?: number; temperature?: number }
+): Promise<string> {
+  const body = {
+    model,
+    temperature: opts.temperature ?? 0.2,
+    messages: [
+      { role: 'system', content: 'Return Markdown only. Use only the provided transcript. No fabrication.' },
+      { role: 'user', content: prompt },
+    ],
+  } as any;
+  const res = await httpRequest('https://api.openai.com/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${apiKey}`,
+      },
+    },
+    JSON.stringify(body),
+    opts.timeoutMs ?? 120000
+  );
+  const json = JSON.parse(res || '{}');
+  const content = json?.choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content;
+  return '';
 }

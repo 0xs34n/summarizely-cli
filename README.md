@@ -41,6 +41,7 @@ Flags:
   - Windows: download installer from https://ollama.com
 
 Cloud providers (optional): set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY`.
+  - OpenAI (non-stream in v1): defaults to `gpt-4o-mini` unless `--model` is provided.
 
 Provider order: Ollama → OpenAI → Anthropic → Google → extractive (no LLM).
 
@@ -87,6 +88,7 @@ Notes:
 - Providers: auto-detects available provider unless `--provider` is set.
   - If no provider available or selected, uses a deterministic extractive summarizer (no LLM) to ensure useful output.
   - Ollama: uses `OLLAMA_HOST` (default `http://127.0.0.1:11434`). If `--model` not set, picks the smallest installed `*instruct` model (prefers `qwen2.5:0.5b-instruct` when available). If no models are installed, we suggest: `ollama pull qwen2.5:0.5b-instruct`.
+  - OpenAI: uses `OPENAI_API_KEY`; defaults to `gpt-4o-mini` (non-stream) unless `--model` is provided.
 - Language: English-only in v1; Mandarin and others coming later.
 
 ## Prompt (LLM mode)
