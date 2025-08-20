@@ -2,44 +2,32 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-export function isWindows() { return process.platform === 'win32'; }
-export function isMac() { return process.platform === 'darwin'; }
-
-export function slugify(input: string): string {
-  return input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
-}
-
 export function toIsoCompact(d: Date = new Date()): string {
   // YYYY-MM-DDTHH-mm-ssZ
   return d.toISOString().replace(/:/g, '-');
-}
-
-export function secondsToHMS(s: number): string {
-  s = Math.max(0, Math.floor(s));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return [h, m, sec].map((v) => String(v).padStart(2, '0')).join(':');
 }
 
 export function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-export function writeLatestCopy(dir: string, targetPath: string) {
-  const latest = path.join(dir, 'latest.md');
+export function writeToLatestDir(outputDir: string, files: { source: string; name: string }[]): void {
   try {
-    // Symlink if supported; else copy
-    try {
-      if (fs.existsSync(latest)) fs.unlinkSync(latest);
-      fs.symlinkSync(path.basename(targetPath), latest);
-      return;
-    } catch {
-      // fallback copy
+    const latestDir = path.join(outputDir, '_latest');
+    // Clean and recreate the _latest directory
+    try { fs.rmSync(latestDir, { recursive: true, force: true }); } catch {}
+    ensureDir(latestDir);
+    
+    // Copy all specified files
+    for (const file of files) {
+      try {
+        fs.copyFileSync(file.source, path.join(latestDir, file.name));
+      } catch {
+        // Individual file copy failures don't stop the process
+      }
     }
-    fs.copyFileSync(targetPath, latest);
   } catch {
-    // ignore
+    // Failing to update _latest is not critical
   }
 }
 
@@ -59,12 +47,4 @@ export function youtubeIdFromUrl(u: string): string | null {
   } catch {
     return null;
   }
-}
-
-import { Segment } from './types';
-
-export function segmentsToPlainText(segments: Segment[]): string {
-  return segments
-    .map((s) => `[${secondsToHMS(s.start)}] ${s.text.replace(/\s+/g, ' ').trim()}`)
-    .join('\n');
 }

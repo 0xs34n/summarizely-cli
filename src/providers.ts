@@ -1,5 +1,5 @@
 import { Captions, Provider } from './types';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
@@ -22,7 +22,6 @@ export function selectProvider(env = process.env): ProviderChoice {
 
 function hasOllamaCli(): boolean {
   try {
-    const { spawnSync } = require('child_process');
     const r = spawnSync('ollama', ['--version'], { encoding: 'utf8' });
     return r.status === 0;
   } catch { return false; }
@@ -30,7 +29,6 @@ function hasOllamaCli(): boolean {
 
 function hasCli(bin: string): boolean {
   try {
-    const { spawnSync } = require('child_process');
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     const r = spawnSync(cmd, [bin], { encoding: 'utf8' });
     return r.status === 0;
@@ -60,7 +58,7 @@ export async function summarizeWithProvider(
   opts?: { model?: string }
 ): Promise<string | null> {
   if (provider === 'claude-cli') {
-    return runCliCapture('claude', [], prompt, 5 * 60_000);
+    return runClaudePrintFlagCapture(prompt, 5 * 60_000);
   }
   if (provider === 'codex-cli') {
     return runCliCapture('codex', ['exec'], prompt, 5 * 60_000);
@@ -106,6 +104,18 @@ export async function summarizeWithProvider(
       throw new ProviderError('unavailable', e?.message || 'Ollama unavailable');
     }
   }
+  if (provider === 'google') {
+    try {
+      const apiKey = process.env.GOOGLE_API_KEY;
+      if (!apiKey) throw new ProviderError('auth', 'GOOGLE_API_KEY is not set');
+      const model = opts?.model || 'gemini-1.5-flash';
+      const text = await googleGenerativeAI(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
+      return text || null;
+    } catch (e: any) {
+      if (e instanceof ProviderError) throw e;
+      throw new ProviderError('unknown', e?.message || 'Google AI error');
+    }
+  }
   // Other providers not implemented in v1
   return null;
 }
@@ -113,14 +123,15 @@ export async function summarizeWithProvider(
 function runCliCapture(cmd: string, args: string[], input: string, timeoutMs: number): Promise<string | null> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      const realArgs = (cmd === 'claude' && args.length === 0) ? ['code'] : args;
+      const child = spawn(cmd, realArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
       let out = '';
       let err = '';
       const t = setTimeout(() => {
         child.kill('SIGTERM');
       }, timeoutMs);
       child.stdout.on('data', (d) => { out += d.toString(); });
-      child.stderr.on('data', (d) => { err += d.toString(); });
+      child.stderr.on('data', (d) => { const s = d.toString(); err += s; process.stderr.write(`[provider ${cmd}] ${s}`); });
       child.on('close', (code) => {
         clearTimeout(t);
         if (code === 0 && out.trim().length > 0) resolve(out.trim());
@@ -177,12 +188,22 @@ async function ollamaGenerate(host: string, model: string, prompt: string, opts:
       top_k: opts.top_k,
     },
   };
-  const res = await httpRequest(
-    host + '/api/generate',
+  const url = host + '/api/generate';
+  const doReq = () => httpRequest(
+    url,
     { method: 'POST', headers: { 'content-type': 'application/json' } },
     JSON.stringify(body),
     opts.timeoutMs ?? 180000
   );
+  let res: string;
+  try {
+    res = await doReq();
+  } catch (e: any) {
+    // Transient retry: timeout or 5xx once
+    const isTransient = (e && (e.message === 'timeout' || (typeof e.status === 'number' && e.status >= 500)));
+    if (!isTransient) throw e;
+    res = await doReq();
+  }
   const json = JSON.parse(res || '{}');
   return json?.response ?? '';
 }
@@ -230,18 +251,13 @@ export let httpRequest = _httpRequestImpl;
 export function __setHttpRequest(fn: typeof _httpRequestImpl) { httpRequest = fn; }
 
 // ---- Streaming variants ----
+// Streaming is supported for non-CLI providers. Currently: Ollama only.
 export async function summarizeWithProviderStream(
   provider: Provider,
   _cap: Captions,
   prompt: string,
   opts: { model?: string; onChunk: (chunk: string) => void }
 ): Promise<string | null> {
-  if (provider === 'claude-cli') {
-    return runCliStream('claude', [], prompt, 5 * 60_000, opts.onChunk);
-  }
-  if (provider === 'codex-cli') {
-    return runCliStream('codex', ['exec'], prompt, 5 * 60_000, opts.onChunk);
-  }
   if (provider === 'ollama') {
     try {
       const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
@@ -259,43 +275,6 @@ export async function summarizeWithProviderStream(
     }
   }
   return null;
-}
-
-function runCliStream(
-  cmd: string,
-  args: string[],
-  input: string,
-  timeoutMs: number,
-  onChunk: (chunk: string) => void
-): Promise<string | null> {
-  return new Promise((resolve) => {
-    try {
-      const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-      let out = '';
-      let err = '';
-      const t = setTimeout(() => {
-        child.kill('SIGTERM');
-      }, timeoutMs);
-      child.stdout.on('data', (d) => {
-        const s = d.toString();
-        out += s;
-        onChunk(s);
-      });
-      child.stderr.on('data', (d) => {
-        err += d.toString();
-      });
-      child.on('close', (code) => {
-        clearTimeout(t);
-        if (code === 0 && out.trim().length > 0) resolve(out.trim());
-        else resolve(null);
-      });
-      child.on('error', () => resolve(null));
-      child.stdin.write(input);
-      child.stdin.end();
-    } catch {
-      resolve(null);
-    }
-  });
 }
 
 async function ollamaGenerateStream(
@@ -369,6 +348,29 @@ async function ollamaGenerateStream(
     }
   });
 }
+
+// Minimal Claude print-mode helpers: pass entire prompt via -p to avoid stdin EPIPE
+function runClaudePrintFlagCapture(prompt: string, timeoutMs: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      let err = '';
+      const t = setTimeout(() => { child.kill('SIGTERM'); }, timeoutMs);
+      child.stdout.on('data', (d) => { out += d.toString(); });
+      child.stderr.on('data', (d) => { err += d.toString(); });
+      child.on('close', (code) => {
+        clearTimeout(t);
+        if (code === 0 && out.trim().length > 0) resolve(out.trim());
+        else resolve(null);
+      });
+      child.on('error', () => resolve(null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 
 // ---- OpenAI helpers ----
 async function openaiChat(
@@ -459,6 +461,61 @@ export async function anthropicMessages(
   return content || '';
 }
 
+// ---- Google Generative AI helpers ----
+async function googleGenerativeAI(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  opts: { timeoutMs?: number; temperature?: number; topP?: number; topK?: number }
+): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [
+      {
+        parts: [
+          {
+            text: prompt,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: opts.temperature ?? 0.2,
+      topP: opts.topP ?? 0.95,
+      topK: opts.topK ?? 40,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  let res: string;
+  try {
+    res = await httpRequest(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+      JSON.stringify(body),
+      opts.timeoutMs ?? 120000
+    );
+  } catch (e: any) {
+    if (e instanceof HttpError || typeof e?.status === 'number') {
+      if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'Google AI authentication failed');
+      if (e.status === 429) throw new ProviderError('rate_limit', 'Google AI rate limit exceeded');
+      if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'Google AI invalid request');
+      if (e.status && e.status >= 500) throw new ProviderError('unavailable', 'Google AI server error');
+    }
+    if (e?.message === 'timeout') throw new ProviderError('timeout', 'Google AI request timed out');
+    throw e;
+  }
+
+  const json = JSON.parse(res || '{}');
+  const content = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return content;
+}
+
 // Friendly error message mapper for CLI
 export function formatProviderError(provider: string, e: ProviderError): string {
   if (provider === 'ollama') {
@@ -479,6 +536,13 @@ export function formatProviderError(provider: string, e: ProviderError): string 
     if (e.code === 'invalid_request') return 'Anthropic invalid request. Try a shorter transcript or another model.';
     if (e.code === 'unavailable') return 'Anthropic server error. Please try again later.';
     if (e.code === 'timeout') return 'Anthropic request timed out.';
+  }
+  if (provider === 'google') {
+    if (e.code === 'auth') return 'Google AI authentication failed. Set GOOGLE_API_KEY.';
+    if (e.code === 'rate_limit') return 'Google AI rate limit exceeded. Please try again later.';
+    if (e.code === 'invalid_request') return 'Google AI invalid request. Try a shorter transcript or another model.';
+    if (e.code === 'unavailable') return 'Google AI server error. Please try again later.';
+    if (e.code === 'timeout') return 'Google AI request timed out.';
   }
   if (provider === 'claude-cli' || provider === 'codex-cli') {
     if (e.code === 'not_found') return `${provider === 'claude-cli' ? 'Claude' : 'Codex'} CLI not found on PATH.`;
