@@ -11,7 +11,7 @@ YouTube video summarizer. No API keys required - uses your existing Claude Pro o
 ## Why?
 
 - **10x faster** - 2-hour video → 2-minute read
-- **100x more content** - Process entire channels overnight  
+- **Save hours** - Get the key insights without watching  
 - **Zero friction** - Uses your existing AI subscriptions
 
 ## Installation
