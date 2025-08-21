@@ -1,11 +1,2 @@
 #!/usr/bin/env node
-// Thin wrapper to execute built CLI
-try {
-  const path = require('path');
-  const entry = path.join(__dirname, '..', 'dist', 'cli.js');
-  require(entry);
-} catch (err) {
-  console.error('Summarizely CLI is not built yet. Run `npm run build` first.');
-  console.error(err && (err.message || err));
-  process.exit(1);
-}
+require('../dist/cli.js');

@@ -2,9 +2,12 @@
 
 ## Reporting a Vulnerability
 
-Please report security issues privately by emailing security@example.com. We will acknowledge receipt within 48 hours.
+Please report security issues by opening a GitHub issue at https://github.com/yourusername/summarizely-cli/issues. For sensitive issues, please mark them as private.
 
 ## Supported Versions
 
-This project is pre-release. We will document supported versions upon the first stable release.
+| Version | Supported          |
+| ------- | ------------------ |
+| 1.0.x   | :white_check_mark: |
+| < 1.0   | :x:                |
 

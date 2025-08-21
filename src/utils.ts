@@ -40,8 +40,17 @@ export function youtubeIdFromUrl(u: string): string | null {
     const url = new URL(u);
     if (url.hostname === 'youtu.be') return url.pathname.slice(1) || null;
     if (/(^|\.)youtube\.com$/.test(url.hostname)) {
+      // Check for watch?v= format
       const v = url.searchParams.get('v');
-      return v || null;
+      if (v) return v;
+      
+      // Check for /embed/ format
+      if (url.pathname.startsWith('/embed/')) {
+        const id = url.pathname.slice(7).split('/')[0];
+        return id || null;
+      }
+      
+      return null;
     }
     return null;
   } catch {

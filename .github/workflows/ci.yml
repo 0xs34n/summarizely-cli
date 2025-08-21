@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build-test:
@@ -12,12 +13,61 @@ jobs:
         node: [18.x, 20.x]
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Install
+      
+      - name: Install yt-dlp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install --user yt-dlp
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      
+      - name: Verify yt-dlp installation
+        run: yt-dlp --version
+      
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
+      
       - name: Build
-        run: npm run build --if-present
-      - name: Test
-        run: npm test --if-present
+        run: npm run build
+      
+      - name: Run tests
+        run: npm test
+      
+      - name: Run unit tests
+        run: npm run test:unit
+      
+      - name: Run integration tests
+        run: npm run test:integration
+      
+      - name: Run comprehensive test suite with coverage
+        run: |
+          npm run test:coverage || true
+          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Node version: ${{ matrix.node }}" >> $GITHUB_STEP_SUMMARY
+          if [ -f test-results.txt ]; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -20 test-results.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Count test coverage
+        run: |
+          echo "### Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit tests: $(ls tests/unit/*.test.js 2>/dev/null | wc -l) files" >> $GITHUB_STEP_SUMMARY
+          echo "- Integration tests: $(ls tests/integration/*.test.js 2>/dev/null | wc -l) files" >> $GITHUB_STEP_SUMMARY
+          echo "- Total test files: $(find tests -name "*.test.js" | wc -l)" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.node }}
+          path: |
+            test-results.txt
+            test-results/
+            coverage/
+          retention-days: 7

@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'child_process';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
+import fs from 'fs';
 
 export type ProviderChoice = {
   provider: Provider | null;
@@ -10,14 +11,11 @@ export type ProviderChoice = {
 };
 
 export function selectProvider(env = process.env): ProviderChoice {
-  // Prefer local CLI providers if present; then local Ollama; then cloud keys
+  // Prefer local CLI providers if present; then local Ollama
   if (hasCli('claude')) return { provider: 'claude-cli', reason: 'Claude CLI detected' };
   if (hasCli('codex')) return { provider: 'codex-cli', reason: 'Codex CLI detected' };
   if (env.OLLAMA_HOST || hasOllamaCli()) return { provider: 'ollama', reason: 'Ollama detected' };
-  if (env.OPENAI_API_KEY) return { provider: 'openai', reason: 'OPENAI_API_KEY found' };
-  if (env.ANTHROPIC_API_KEY) return { provider: 'anthropic', reason: 'ANTHROPIC_API_KEY found' };
-  if (env.GOOGLE_API_KEY) return { provider: 'google', reason: 'GOOGLE_API_KEY found' };
-  return { provider: null, reason: 'No local model or API keys detected' };
+  return { provider: null, reason: 'No CLI tools or local models detected' };
 }
 
 function hasOllamaCli(): boolean {
@@ -61,31 +59,8 @@ export async function summarizeWithProvider(
     return runClaudePrintFlagCapture(prompt, 5 * 60_000);
   }
   if (provider === 'codex-cli') {
-    return runCliCapture('codex', ['exec'], prompt, 5 * 60_000);
-  }
-  if (provider === 'openai') {
-    try {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) throw new ProviderError('auth', 'OPENAI_API_KEY is not set');
-      const model = opts?.model || 'gpt-4o-mini';
-      const text = await openaiChat(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
-      return text || null;
-    } catch (e: any) {
-      if (e instanceof ProviderError) throw e;
-      throw new ProviderError('unknown', e?.message || 'OpenAI error');
-    }
-  }
-  if (provider === 'anthropic') {
-    try {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) throw new ProviderError('auth', 'ANTHROPIC_API_KEY is not set');
-      const model = (opts?.model as string) || 'claude-3-5-sonnet-latest';
-      const text = await anthropicMessages(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
-      return text || null;
-    } catch (e: any) {
-      if (e instanceof ProviderError) throw e;
-      throw new ProviderError('unknown', e?.message || 'Anthropic error');
-    }
+    const rawOutput = await runCliCapture('codex', ['exec'], prompt, 5 * 60_000);
+    return extractMarkdownFromCodexOutput(rawOutput);
   }
   if (provider === 'ollama') {
     try {
@@ -104,20 +79,53 @@ export async function summarizeWithProvider(
       throw new ProviderError('unavailable', e?.message || 'Ollama unavailable');
     }
   }
-  if (provider === 'google') {
-    try {
-      const apiKey = process.env.GOOGLE_API_KEY;
-      if (!apiKey) throw new ProviderError('auth', 'GOOGLE_API_KEY is not set');
-      const model = opts?.model || 'gemini-1.5-flash';
-      const text = await googleGenerativeAI(prompt, model, apiKey, { timeoutMs: 120_000, temperature: 0.2 });
-      return text || null;
-    } catch (e: any) {
-      if (e instanceof ProviderError) throw e;
-      throw new ProviderError('unknown', e?.message || 'Google AI error');
-    }
-  }
   // Other providers not implemented in v1
   return null;
+}
+
+export function extractMarkdownFromCodexOutput(output: string | null): string | null {
+  if (!output) return null;
+  
+  const lines = output.split('\n');
+  let actualSummaryStart = -1;
+  let foundCodexMarker = false;
+  
+  // Look for the [timestamp] codex marker followed by actual markdown summary
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Check if this line contains a codex timestamp marker
+    if (line.includes('] codex')) {
+      foundCodexMarker = true;
+      continue;
+    }
+    
+    // After finding codex marker, look for the actual summary start
+    if (foundCodexMarker && line.trim().startsWith('#') && line.trim().length > 1) {
+      actualSummaryStart = i;
+      break;
+    }
+  }
+  
+  if (actualSummaryStart !== -1) {
+    // Found the actual summary after codex marker
+    return lines.slice(actualSummaryStart).join('\n').trim();
+  }
+  
+  // Fallback: look for a line that starts with # followed by proper metadata
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#') && !line.includes('Now write the summary') && line.length > 1) {
+      // Check if next few lines contain URL metadata
+      const nextLines = lines.slice(i, Math.min(i + 10, lines.length)).join('\n');
+      if (nextLines.includes('**URL:**') && nextLines.includes('**Generated:**')) {
+        return lines.slice(i).join('\n').trim();
+      }
+    }
+  }
+  
+  // If no clear summary found, return original
+  return output;
 }
 
 function runCliCapture(cmd: string, args: string[], input: string, timeoutMs: number): Promise<string | null> {
@@ -138,9 +146,6 @@ function runCliCapture(cmd: string, args: string[], input: string, timeoutMs: nu
         else resolve(null);
       });
       child.on('error', (error: any) => {
-        if (error && error.code === 'ENOENT') {
-          throw new ProviderError('not_found', `${cmd} CLI not found on PATH`);
-        }
         resolve(null);
       });
       child.stdin.write(input);
@@ -155,11 +160,9 @@ function runCliCapture(cmd: string, args: string[], input: string, timeoutMs: nu
 type OllamaModel = { name: string; size?: number };
 
 async function selectOllamaModel(host: string): Promise<string | null> {
-  // Respect preference for qwen2.5:0.5b-instruct if present; else pick smallest instruct model
+  // Pick smallest instruct model, or smallest model overall
   const models = await listOllamaModels(host);
   if (!models.length) return null;
-  const qwen = models.find((m) => /qwen/i.test(m.name) && /0\.5b/i.test(m.name) && /instruct/i.test(m.name));
-  if (qwen) return qwen.name;
   const instruct = models.filter((m) => /instruct/i.test(m.name));
   if (instruct.length === 0) return models[0].name;
   instruct.sort((a, b) => (a.size ?? Number.MAX_SAFE_INTEGER) - (b.size ?? Number.MAX_SAFE_INTEGER));
@@ -250,105 +253,6 @@ function _httpRequestImpl(urlStr: string, options: { method?: string; headers?: 
 export let httpRequest = _httpRequestImpl;
 export function __setHttpRequest(fn: typeof _httpRequestImpl) { httpRequest = fn; }
 
-// ---- Streaming variants ----
-// Streaming is supported for non-CLI providers. Currently: Ollama only.
-export async function summarizeWithProviderStream(
-  provider: Provider,
-  _cap: Captions,
-  prompt: string,
-  opts: { model?: string; onChunk: (chunk: string) => void }
-): Promise<string | null> {
-  if (provider === 'ollama') {
-    try {
-      const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
-      const model = opts?.model || (await selectOllamaModel(host));
-      if (!model) return null;
-      return await ollamaGenerateStream(host, model, prompt, {
-        temperature: 0.2,
-        top_p: 0.9,
-        top_k: 40,
-        timeoutMs: 3 * 60_000,
-        onChunk: opts.onChunk,
-      });
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-async function ollamaGenerateStream(
-  host: string,
-  model: string,
-  prompt: string,
-  opts: { temperature?: number; top_p?: number; top_k?: number; timeoutMs?: number; onChunk: (chunk: string) => void }
-): Promise<string> {
-  const body = {
-    model,
-    prompt,
-    stream: true,
-    options: {
-      temperature: opts.temperature,
-      top_p: opts.top_p,
-      top_k: opts.top_k,
-    },
-  };
-  return new Promise((resolve, reject) => {
-    try {
-      const u = new URL(host + '/api/generate');
-      const mod = u.protocol === 'https:' ? https : http;
-      const req = mod.request(
-        {
-          protocol: u.protocol,
-          hostname: u.hostname,
-          port: u.port,
-          path: u.pathname + (u.search || ''),
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-        },
-        (res) => {
-          let buf = '';
-          let acc = '';
-          res.setEncoding('utf8');
-          res.on('data', (chunk) => {
-            buf += chunk;
-            let idx;
-            while ((idx = buf.indexOf('\n')) >= 0) {
-              const line = buf.slice(0, idx).trim();
-              buf = buf.slice(idx + 1);
-              if (!line) continue;
-              try {
-                const obj = JSON.parse(line);
-                if (typeof obj?.response === 'string' && obj.response.length > 0) {
-                  opts.onChunk(obj.response);
-                  acc += obj.response;
-                }
-                if (obj?.done) {
-                  resolve(acc);
-                }
-              } catch {
-                // ignore parse errors for partial lines
-              }
-            }
-          });
-          res.on('end', () => {
-            // If server ended without done, resolve whatever we have
-            resolve(acc);
-          });
-        }
-      );
-      req.on('error', reject);
-      req.setTimeout(opts.timeoutMs ?? 180000, () => {
-        req.destroy(new Error('timeout'));
-      });
-      req.write(JSON.stringify(body));
-      req.end();
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-
 // Minimal Claude print-mode helpers: pass entire prompt via -p to avoid stdin EPIPE
 function runClaudePrintFlagCapture(prompt: string, timeoutMs: number): Promise<string | null> {
   return new Promise((resolve) => {
@@ -361,7 +265,25 @@ function runClaudePrintFlagCapture(prompt: string, timeoutMs: number): Promise<s
       child.stderr.on('data', (d) => { err += d.toString(); });
       child.on('close', (code) => {
         clearTimeout(t);
-        if (code === 0 && out.trim().length > 0) resolve(out.trim());
+        if (code === 0 && out.trim().length > 0) {
+          const output = out.trim();
+          // Check if Claude Code created a file instead of outputting the summary
+          const fileMatch = output.match(/^Summary created at `(.+?)`$/);
+          if (fileMatch && fileMatch[1]) {
+            try {
+              // Read the actual summary from the file Claude Code created
+              const content = fs.readFileSync(fileMatch[1], 'utf8');
+              // Clean up the temporary file
+              fs.unlinkSync(fileMatch[1]);
+              resolve(content);
+            } catch {
+              // If we can't read the file, fall back to the original output
+              resolve(output);
+            }
+          } else {
+            resolve(output);
+          }
+        }
         else resolve(null);
       });
       child.on('error', () => resolve(null));
@@ -371,178 +293,12 @@ function runClaudePrintFlagCapture(prompt: string, timeoutMs: number): Promise<s
   });
 }
 
-
-// ---- OpenAI helpers ----
-async function openaiChat(
-  prompt: string,
-  model: string,
-  apiKey: string,
-  opts: { timeoutMs?: number; temperature?: number }
-): Promise<string> {
-  const body = {
-    model,
-    temperature: opts.temperature ?? 0.2,
-    messages: [
-      { role: 'system', content: 'Return Markdown only. Use only the provided transcript. No fabrication.' },
-      { role: 'user', content: prompt },
-    ],
-  } as any;
-  let res: string;
-  try {
-    res = await httpRequest(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'authorization': `Bearer ${apiKey}`,
-        },
-      },
-      JSON.stringify(body),
-      opts.timeoutMs ?? 120000
-    );
-  } catch (e: any) {
-    if (e instanceof HttpError || typeof e?.status === 'number') {
-      if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'OpenAI authentication failed');
-      if (e.status === 429) throw new ProviderError('rate_limit', 'OpenAI rate limit exceeded');
-      if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'OpenAI invalid request');
-      if (e.status && e.status >= 500) throw new ProviderError('unavailable', 'OpenAI server error');
-    }
-    if (e?.message === 'timeout') throw new ProviderError('timeout', 'OpenAI request timed out');
-    throw e;
-  }
-  const json = JSON.parse(res || '{}');
-  const content = json?.choices?.[0]?.message?.content;
-  if (typeof content === 'string') return content;
-  return '';
-}
-
-// ---- Anthropic (Claude) helpers ----
-export async function anthropicMessages(
-  prompt: string,
-  model: string,
-  apiKey: string,
-  opts: { timeoutMs?: number; temperature?: number }
-): Promise<string> {
-  let res: string;
-  try {
-    const body = {
-      model,
-      max_tokens: 2000,
-      temperature: opts.temperature ?? 0.2,
-      system: 'Return Markdown only. Use only the provided transcript. No fabrication.',
-      messages: [ { role: 'user', content: prompt } ],
-    };
-    res = await httpRequest(
-      'https://api.anthropic.com/v1/messages',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-      },
-      JSON.stringify(body),
-      opts.timeoutMs ?? 120000
-    );
-  } catch (e: any) {
-    if (e instanceof HttpError || typeof e?.status === 'number') {
-      if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'Anthropic authentication failed');
-      if (e.status === 429) throw new ProviderError('rate_limit', 'Anthropic rate limit exceeded');
-      if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'Anthropic invalid request');
-      if (e.status && e.status >= 500) throw new ProviderError('unavailable', 'Anthropic server error');
-    }
-    if (e?.message === 'timeout') throw new ProviderError('timeout', 'Anthropic request timed out');
-    throw e;
-  }
-  const json = JSON.parse(res || '{}');
-  const content = Array.isArray(json?.content) ? json.content.map((p: any) => p?.text || '').join('') : '';
-  return content || '';
-}
-
-// ---- Google Generative AI helpers ----
-async function googleGenerativeAI(
-  prompt: string,
-  model: string,
-  apiKey: string,
-  opts: { timeoutMs?: number; temperature?: number; topP?: number; topK?: number }
-): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const body = {
-    contents: [
-      {
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: opts.temperature ?? 0.2,
-      topP: opts.topP ?? 0.95,
-      topK: opts.topK ?? 40,
-      maxOutputTokens: 8192,
-    },
-  };
-
-  let res: string;
-  try {
-    res = await httpRequest(
-      url,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-      JSON.stringify(body),
-      opts.timeoutMs ?? 120000
-    );
-  } catch (e: any) {
-    if (e instanceof HttpError || typeof e?.status === 'number') {
-      if (e.status === 401 || e.status === 403) throw new ProviderError('auth', 'Google AI authentication failed');
-      if (e.status === 429) throw new ProviderError('rate_limit', 'Google AI rate limit exceeded');
-      if (e.status && e.status >= 400 && e.status < 500) throw new ProviderError('invalid_request', 'Google AI invalid request');
-      if (e.status && e.status >= 500) throw new ProviderError('unavailable', 'Google AI server error');
-    }
-    if (e?.message === 'timeout') throw new ProviderError('timeout', 'Google AI request timed out');
-    throw e;
-  }
-
-  const json = JSON.parse(res || '{}');
-  const content = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return content;
-}
-
 // Friendly error message mapper for CLI
 export function formatProviderError(provider: string, e: ProviderError): string {
   if (provider === 'ollama') {
-    if (e.code === 'no_models') return 'Ollama has no models installed. Try: ollama pull qwen2.5:0.5b-instruct';
+    if (e.code === 'no_models') return 'Ollama has no models installed. Try: ollama pull llama3.2:1b';
     if (e.code === 'unavailable') return `Cannot reach Ollama at ${process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'}. Is it running?`;
     if (e.code === 'timeout') return 'Ollama request timed out.';
-  }
-  if (provider === 'openai') {
-    if (e.code === 'auth') return 'OpenAI authentication failed. Set OPENAI_API_KEY.';
-    if (e.code === 'rate_limit') return 'OpenAI rate limit exceeded. Please try again later.';
-    if (e.code === 'invalid_request') return 'OpenAI invalid request. Try a shorter transcript or another model.';
-    if (e.code === 'unavailable') return 'OpenAI server error. Please try again later.';
-    if (e.code === 'timeout') return 'OpenAI request timed out.';
-  }
-  if (provider === 'anthropic') {
-    if (e.code === 'auth') return 'Anthropic authentication failed. Set ANTHROPIC_API_KEY.';
-    if (e.code === 'rate_limit') return 'Anthropic rate limit exceeded. Please try again later.';
-    if (e.code === 'invalid_request') return 'Anthropic invalid request. Try a shorter transcript or another model.';
-    if (e.code === 'unavailable') return 'Anthropic server error. Please try again later.';
-    if (e.code === 'timeout') return 'Anthropic request timed out.';
-  }
-  if (provider === 'google') {
-    if (e.code === 'auth') return 'Google AI authentication failed. Set GOOGLE_API_KEY.';
-    if (e.code === 'rate_limit') return 'Google AI rate limit exceeded. Please try again later.';
-    if (e.code === 'invalid_request') return 'Google AI invalid request. Try a shorter transcript or another model.';
-    if (e.code === 'unavailable') return 'Google AI server error. Please try again later.';
-    if (e.code === 'timeout') return 'Google AI request timed out.';
   }
   if (provider === 'claude-cli' || provider === 'codex-cli') {
     if (e.code === 'not_found') return `${provider === 'claude-cli' ? 'Claude' : 'Codex'} CLI not found on PATH.`;

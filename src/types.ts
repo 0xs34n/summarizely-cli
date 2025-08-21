@@ -15,7 +15,7 @@ export type Captions = {
   averageRating?: number;
 };
 
-export type Provider = 'claude-cli' | 'codex-cli' | 'ollama' | 'openai' | 'anthropic' | 'google';
+export type Provider = 'claude-cli' | 'codex-cli' | 'ollama';
 
 // Basic type for yt-dlp info.json structure
 export interface YtDlpInfo {

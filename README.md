@@ -2,11 +2,31 @@
 
 Quickly turn a YouTube link into a concise summary.
 
-Status: v1 with captions-only flow and provider routing stubs (LLM providers optional). No extractive fallback.
+**Version 1.2.0** - Radically simplified with lean, focused testing.
+
+## Philosophy
+
+### Core Beliefs
+- **No API Keys**: Use your existing Claude/Codex subscriptions or local models - no secrets to manage
+- **Own Your Agent**: Complete control over your tools. No vendor lock-in, no forced cloud dependencies
+- **Quality First**: No degraded fallbacks - we require an LLM for quality output
+- **Speed Through Simplicity**: No API key management means simpler, more maintainable code
+- **Zero Surprises**: No hidden costs, no unexpected bills, transparent operation
+
+### Why No API Keys?
+Instead of managing API keys that leak in logs and create billing anxiety, we use:
+- Claude CLI - Uses your existing Claude Pro subscription
+- Codex CLI - Uses your existing Codex access
+- Ollama - Runs entirely locally, no auth needed
+
+### What We're NOT Building
+- Not a video enhancement tool - we replace watching videos entirely
+- Not a universal summarizer - we do YouTube videos with captions, and do it well
+- Not a freemium service - you bring your own LLM, you get full functionality
 
 ## Quickstart
 
-- Requirements: Node.js 18+, `yt-dlp` (recommended), optional Ollama or API keys.
+- Requirements: Node.js 18+, `yt-dlp` (recommended), and a provider (Claude CLI, Codex CLI, or Ollama).
 - Install deps and build:
 
 ```
@@ -17,18 +37,24 @@ npm link   # optional, to use `summarizely` globally
 
 ## Usage
 
-```
-summarizely --help
-summarizely https://www.youtube.com/watch?v=VIDEO_ID [--provider claude-cli|codex-cli|ollama|openai|anthropic|google] [--model qwen2.5:0.5b-instruct] [--output-dir summaries] [--stream|--json]
+```bash
+# Basic usage
+summarizely https://www.youtube.com/watch?v=VIDEO_ID
+
+# With specific provider
+summarizely https://www.youtube.com/watch?v=VIDEO_ID --provider claude-cli
+summarizely https://www.youtube.com/watch?v=VIDEO_ID --provider ollama --model llama3.2:1b
 ```
 
 Flags:
-- `--provider <name>`: provider selection; defaults to auto-detect (CLI→Ollama→OpenAI→Anthropic→Google)
-- `--model <name>`: model preset (default for Ollama: `qwen2.5:0.5b-instruct`)
-- `--output-dir <dir>`: output root (default `summaries`)
-- `--captions-only`: force captions path, no ASR (v1 has no ASR anyway)
-- `--stream`: stream output for supported providers (currently Ollama only). Not available for CLI providers. Mutually exclusive with `--json`.
-- `--json`: output JSON metadata to stdout instead of the full Markdown summary (all files are still saved to disk regardless)
+- `-p, --provider <name>`: Provider selection (claude-cli|codex-cli|ollama). Auto-detects if not specified.
+- `-m, --model <name>`: Model to use (for Ollama only)
+- `-o, --output-dir <dir>`: Output directory (default: `summaries`)
+- `--no-save-transcript`: Skip saving transcript files
+- `--max-chars <n>`: Max transcript length for CLI providers (default: 80000)
+- `--no-cap`: Disable transcript truncation for CLI providers
+- `-h, --help`: Show help message
+- `-v, --version`: Show version
 
 ## Dependencies
 
@@ -36,14 +62,11 @@ Flags:
   - macOS: `brew install yt-dlp`
   - Linux: `pipx install yt-dlp` (or `pip install --user yt-dlp`)
   - Windows: `winget install yt-dlp` (or `choco install yt-dlp`)
-- Local model (optional): Ollama with `qwen2.5:0.5b-instruct`.
+- Local model (optional): Ollama with a small model like `llama3.2:1b`.
   - macOS/Linux: `curl -fsSL https://ollama.com/install.sh | sh`
   - Windows: download installer from https://ollama.com
 
-Cloud providers (optional): set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY`.
-  - OpenAI (non-stream in v1): defaults to `gpt-4o-mini` unless `--model` is provided.
-
-Provider order: CLI → Ollama → OpenAI → Anthropic → Google.
+Provider order: CLI → Ollama.
 
 ## External CLI Providers
 
@@ -70,52 +93,33 @@ Notes:
 ## Development
 
 - Build: `npm run build`
-- Test: `npm test` (placeholders and unit tests only)
+- Test: `npm test` (runs 8 essential tests)
 
 ## Output
 
 Files are **always** written to disk under `summaries/<YYYY-MM-DDTHH-mm-ssZ>_<Title>/`:
 - `summary_full.md` - The full Markdown summary
 - `transcript.txt` - Plain text transcript (unless `--no-save-transcript`)
-- `metadata.json` - Video metadata (URL, title, videoId, provider, createdAt)
+- `metadata.json` - Video metadata (URL, title, videoId, provider, model, createdAt)
 
 A `summaries/_latest/` folder always contains a copy of the most recent run.
 
+**Transcript Reuse**: If a transcript already exists in the summaries directory for a video, it will be reused to save time.
+
 ### Terminal Output (stdout)
 
-By default, the full Markdown summary is printed to your terminal.
+The full Markdown summary is printed to your terminal.
 
-With `--json` flag, only metadata is printed (useful for scripting):
-```json
-{
-  "status": "ok",
-  "path": "summaries/2024-01-20T10-30-45Z_video_title/summary_full.md",
-  "provider": "claude-cli",
-  "url": "https://youtube.com/watch?v=VIDEO_ID",
-  "videoId": "VIDEO_ID",
-  "title": "Video Title"
-}
-```
-
-Example usage in scripts:
-```bash
-# Get just the file path
-path=$(summarizely $URL --json | jq -r '.path')
-
-# Process multiple videos and collect metadata
-for url in "${urls[@]}"; do
-  summarizely "$url" --json >> results.jsonl
-done
-```
+For scripting, all metadata is available in the output directory:
+- `metadata.json` contains URL, video ID, title, provider, and timestamp
+- Exit codes indicate success (0) or specific failure types (2-5)
 
 ## Behavior & Fallbacks
 
 - Captions: prefers `yt-dlp` (JSON + VTT). If missing, prints install guidance. There is no JS transcript fallback in v1.
 - Providers: auto-detects available provider unless `--provider` is set.
   - If no provider is available or selected, the CLI exits with code 5 and prints guidance on configuring a provider.
-  - Ollama: uses `OLLAMA_HOST` (default `http://127.0.0.1:11434`). If `--model` not set, picks the smallest installed `*instruct` model (prefers `qwen2.5:0.5b-instruct` when available). If no models are installed, we suggest: `ollama pull qwen2.5:0.5b-instruct`.
-  - OpenAI: uses `OPENAI_API_KEY`; defaults to `gpt-4o-mini` (non-stream) unless `--model` is provided.
-  - Claude (planned): uses `ANTHROPIC_API_KEY`; defaults to `claude-3-5-sonnet-latest` (non-stream) unless `--model` is provided.
+  - Ollama: uses `OLLAMA_HOST` (default `http://127.0.0.1:11434`). If `--model` not set, picks the smallest installed `*instruct` model. If no models are installed, we suggest: `ollama pull llama3.2:1b`.
 - Language: English-only in v1; Mandarin and others coming later.
 
 ## Prompt (LLM mode)
@@ -160,15 +164,14 @@ Notes:
 ## Troubleshooting
 
 - `yt-dlp not found`: install using one of the commands above, then rerun.
-- No provider keys and no Ollama: the CLI will exit with code 5. Configure a provider (install a CLI, run Ollama, or set an API key).
+- No CLI tools and no Ollama: the CLI will exit with code 5. Configure a provider (install Claude CLI, Codex CLI, or run Ollama).
 - Output not appearing: ensure you have write permissions to the current directory; use `--output-dir` to change.
 - Ollama unreachable: ensure the daemon is running (`ollama serve`) and `OLLAMA_HOST` is correct.
-- No Ollama models: run `ollama pull qwen2.5:0.5b-instruct`.
-- OpenAI auth errors: set `OPENAI_API_KEY`; rate limit errors may require retrying later or a shorter transcript.
+- No Ollama models: run `ollama pull llama3.2:1b` (or any small model like `gemma2:2b`).
 
-## Roadmap Fit
+## Future Roadmap
 
-- Week 1: captions-first, Markdown output, snapshot tests
-- Week 3: ASR fallback (Whisper), billing gates
+- ASR support for videos without captions (using Whisper API)
+- Additional language support beyond English
 
 License: Apache-2.0 — see [LICENSE](./LICENSE).

@@ -1,7 +1,7 @@
 {
   "name": "summarizely-cli",
-  "version": "0.1.0",
-  "description": "Summarize YouTube links into concise, timestamped digests.",
+  "version": "1.2.0",
+  "description": "Summarize YouTube links into concise digests.",
   "bin": {
     "summarizely": "bin/summarizely"
   },
@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist || rm -rf dist",
     "prepare": "npm run build",
-    "test": "npm run build && node tests/run-tests.js"
+    "test": "npm run build && node tests/test.js"
   },
   "engines": {
     "node": ">=18"
@@ -23,6 +23,7 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^20.11.30",
+    "rimraf": "^6.0.1",
     "typescript": "^5.5.0"
   }
 }
