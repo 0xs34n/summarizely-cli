@@ -1,7 +1,7 @@
 {
   "name": "summarizely-cli",
   "version": "1.2.0",
-  "description": "Summarize YouTube links into concise digests.",
+  "description": "YouTube summarizer that respects your existing subscriptions. No API keys required.",
   "bin": {
     "summarizely": "bin/summarizely"
   },
@@ -11,16 +11,38 @@
     "prepare": "npm run build",
     "test": "npm run build && node tests/test.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xs34n/summarizely-cli.git"
+  },
+  "homepage": "https://github.com/0xs34n/summarizely-cli#readme",
+  "bugs": {
+    "url": "https://github.com/0xs34n/summarizely-cli/issues"
+  },
   "engines": {
     "node": ">=18"
   },
   "keywords": [
     "youtube",
     "summary",
-    "cli"
+    "summarizer",
+    "cli",
+    "markdown",
+    "claude-cli",
+    "codex-cli",
+    "ollama",
+    "no-api-keys",
+    "transcript"
   ],
-  "author": "",
+  "author": "0xs34n",
   "license": "Apache-2.0",
+  "files": [
+    "dist/",
+    "bin/",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "devDependencies": {
     "@types/node": "^20.11.30",
     "rimraf": "^6.0.1",

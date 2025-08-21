@@ -9,7 +9,7 @@ Thank you for your interest in contributing to Summarizely CLI!
 3. Install dependencies: `npm install`
 4. Install yt-dlp: `brew install yt-dlp` (macOS) or `pip install yt-dlp` (Linux/Windows)
 5. Build the project: `npm run build`
-6. Run tests: `npm test` (basic) or `npm run test:all` (comprehensive)
+6. Run tests: `npm test`
 
 ## Guidelines
 
@@ -32,14 +32,15 @@ Thank you for your interest in contributing to Summarizely CLI!
 - Keep PRs focused and small when possible
 
 ### Testing
-- Write unit tests for new functions in `tests/unit/`
-- Ensure existing tests still pass: `npm run test:all`
-- Test specific modules:
-  - `npm run test:unit:batch` - Batch processing
-  - `npm run test:unit:cli` - CLI argument parsing
-  - `npm run test:unit:core` - Core utilities
-  - `npm run test:unit:providers` - Provider selection
-  - `npm run test:unit:process` - Video processing
+- Run tests: `npm test`
+- Tests are in `tests/test.js` (8 essential tests)
+- Test coverage includes:
+  - YouTube URL parsing
+  - Date formatting utilities
+  - VTT transcript parsing
+  - Provider selection logic
+  - CLI argument handling
+  - Prompt building
 - Test with different YouTube video types
 - Verify error handling works correctly
 - CI/CD runs tests automatically on push/PR

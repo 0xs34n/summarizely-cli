@@ -1,6 +1,10 @@
 # Summarizely CLI
 
-Quickly turn a YouTube link into a concise summary.
+[![npm version](https://img.shields.io/npm/v/summarizely-cli.svg)](https://www.npmjs.com/package/summarizely-cli)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/0xs34n/summarizely-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/0xs34n/summarizely-cli/actions)
+
+Quickly turn a YouTube link into a concise summary. No API keys required.
 
 **Version 1.2.0** - Radically simplified with lean, focused testing.
 
@@ -24,16 +28,26 @@ Instead of managing API keys that leak in logs and create billing anxiety, we us
 - Not a universal summarizer - we do YouTube videos with captions, and do it well
 - Not a freemium service - you bring your own LLM, you get full functionality
 
-## Quickstart
+## Installation
 
-- Requirements: Node.js 18+, `yt-dlp` (recommended), and a provider (Claude CLI, Codex CLI, or Ollama).
-- Install deps and build:
-
+### From npm (recommended)
+```bash
+npm install -g summarizely-cli
 ```
+
+### From source
+```bash
+git clone https://github.com/0xs34n/summarizely-cli.git
+cd summarizely-cli
 npm install
 npm run build
-npm link   # optional, to use `summarizely` globally
+npm link   # to use `summarizely` globally
 ```
+
+### Requirements
+- Node.js 18+
+- `yt-dlp` (recommended): `brew install yt-dlp` (macOS) or `pip install yt-dlp`
+- A provider: Claude CLI, Codex CLI, or Ollama
 
 ## Usage
 
