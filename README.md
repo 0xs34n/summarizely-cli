@@ -22,7 +22,7 @@ npm install && npm run build && npm link
 ## Requirements
 
 - **Node.js 18+**
-- **yt-dlp**: `brew install yt-dlp` (macOS) or `pip install yt-dlp` (Linux/Windows)
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**: `brew install yt-dlp` (macOS) or `pip install yt-dlp` (Linux/Windows)
 - **LLM Provider** (one of):
   - Claude CLI - uses your existing Claude Pro subscription
   - Codex CLI - uses your existing ChatGPT subscription  
