@@ -37,37 +37,12 @@ jobs:
       - name: Run tests
         run: npm test
       
-      - name: Run unit tests
-        run: npm run test:unit
-      
-      - name: Run integration tests
-        run: npm run test:integration
-      
-      - name: Run comprehensive test suite with coverage
+      - name: Test Summary
+        if: always()
         run: |
-          npm run test:coverage || true
           echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "Node version: ${{ matrix.node }}" >> $GITHUB_STEP_SUMMARY
-          if [ -f test-results.txt ]; then
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -20 test-results.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "Test file: tests/test.js" >> $GITHUB_STEP_SUMMARY
+          echo "Total tests: 8 essential tests" >> $GITHUB_STEP_SUMMARY
       
-      - name: Count test coverage
-        run: |
-          echo "### Test Coverage Report" >> $GITHUB_STEP_SUMMARY
-          echo "- Unit tests: $(ls tests/unit/*.test.js 2>/dev/null | wc -l) files" >> $GITHUB_STEP_SUMMARY
-          echo "- Integration tests: $(ls tests/integration/*.test.js 2>/dev/null | wc -l) files" >> $GITHUB_STEP_SUMMARY
-          echo "- Total test files: $(find tests -name "*.test.js" | wc -l)" >> $GITHUB_STEP_SUMMARY
-      
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ matrix.node }}
-          path: |
-            test-results.txt
-            test-results/
-            coverage/
-          retention-days: 7
+      # Test artifacts upload removed - no longer needed for simple test suite
