@@ -4,7 +4,15 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/0xs34n/summarizely-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/0xs34n/summarizely-cli/actions)
 
+**Watch less. Learn more. Turn hours of YouTube into minutes of insights.**
+
 YouTube video summarizer. No API keys required - uses your existing Claude Pro or ChatGPT subscription.
+
+## Why?
+
+- **10x faster** - 2-hour video → 2-minute read
+- **100x more content** - Process entire channels overnight  
+- **Zero friction** - Uses your existing AI subscriptions
 
 ## Installation
 
