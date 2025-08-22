@@ -16,6 +16,7 @@ export function selectProvider(env = process.env): ProviderChoice {
   if (hasCli('claude')) return { provider: 'claude-cli', reason: 'Claude CLI detected' };
   if (hasCli('codex')) return { provider: 'codex-cli', reason: 'Codex CLI detected' };
   if (env.OLLAMA_HOST || hasOllamaCli()) return { provider: 'ollama', reason: 'Ollama detected' };
+  logFail('provider selection', 'no CLI tools found');
   return { provider: null, reason: 'No CLI tools or local models detected' };
 }
 

@@ -7,6 +7,7 @@
 import { ensureDir, toIsoCompact, youtubeIdFromUrl, writeToLatestDir } from './utils';
 import { fetchCaptions, getYtDlpInstallHint, hasYtDlp } from './captions';
 import { selectProvider, summarizeWithProvider, ProviderError, formatProviderError } from './providers';
+import { logFail } from './logger';
 import { buildPrompt } from './prompt';
 // Removed caching and retry modules for simplicity
 import path from 'path';
@@ -206,10 +207,20 @@ async function main() {
     caps = fetchCaptions(url);
     if (!caps) {
       const lines: string[] = [];
-      lines.push('Captions not available.');
       if (!hasYtDlp()) {
-        lines.push('Tip: Install yt-dlp for best results:');
-        lines.push('  ' + getYtDlpInstallHint());
+        logFail('yt-dlp', 'not found - install via: brew/winget/pipx install yt-dlp');
+        lines.push('ERROR: Cannot fetch captions - yt-dlp is required');
+        lines.push('Install yt-dlp to continue:');
+        const platform = process.platform;
+        if (platform === 'darwin') {
+          lines.push('  macOS: brew install yt-dlp');
+        } else if (platform === 'win32') {
+          lines.push('  Windows: winget install yt-dlp');
+        } else {
+          lines.push('  Linux: pipx install yt-dlp');
+        }
+      } else {
+        lines.push('Captions not available.');
       }
       process.stderr.write(lines.join('\n') + '\n');
       process.exitCode = 4;
@@ -234,8 +245,12 @@ async function main() {
   
   // Exit if no provider is available
   if (!choice.provider) {
-    process.stderr.write('No provider available. Install a CLI provider (claude, codex), Ollama, or set an API key.\n');
-    process.stderr.write(`Reason: ${choice.reason}\n`);
+    logFail('provider', 'none available - need claude/codex/ollama');
+    process.stderr.write('ERROR: No LLM provider found - cannot generate summaries\n');
+    process.stderr.write('You must install one of:\n');
+    process.stderr.write('  - Claude CLI (for Claude Pro users)\n');
+    process.stderr.write('  - Codex CLI (for ChatGPT Plus users)\n');
+    process.stderr.write('  - Ollama with a model (e.g., ollama pull llama3.2:1b)\n');
     process.exitCode = 5;
     return;
   }

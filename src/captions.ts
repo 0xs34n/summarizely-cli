@@ -23,6 +23,8 @@ export function fetchCaptions(url: string): Captions | null {
   if (hasYtDlp()) {
     const c = fetchWithYtDlp(url);
     if (c) return c;
+  } else {
+    logFail('yt-dlp', 'not installed');
   }
   // JS fallback (stub for v1; return null to signal guidance)
   const fb = fetchWithJsFallback(url);
