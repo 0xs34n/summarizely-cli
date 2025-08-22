@@ -4,6 +4,7 @@ import http from 'http';
 import https from 'https';
 import { URL } from 'url';
 import fs from 'fs';
+import { logStart, logOk, logFail } from './logger';
 
 export type ProviderChoice = {
   provider: Provider | null;
@@ -132,20 +133,36 @@ function runCliCapture(cmd: string, args: string[], input: string, timeoutMs: nu
   return new Promise((resolve) => {
     try {
       const realArgs = (cmd === 'claude' && args.length === 0) ? ['code'] : args;
+      logStart(`${cmd} CLI spawn`);
       const child = spawn(cmd, realArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
       let out = '';
       let err = '';
+      let timedOut = false;
       const t = setTimeout(() => {
+        timedOut = true;
+        logFail(`${cmd} CLI spawn`, 'timeout');
         child.kill('SIGTERM');
       }, timeoutMs);
       child.stdout.on('data', (d) => { out += d.toString(); });
       child.stderr.on('data', (d) => { const s = d.toString(); err += s; process.stderr.write(`[provider ${cmd}] ${s}`); });
       child.on('close', (code) => {
         clearTimeout(t);
-        if (code === 0 && out.trim().length > 0) resolve(out.trim());
-        else resolve(null);
+        if (!timedOut) {
+          if (code === 0 && out.trim().length > 0) {
+            logOk(`${cmd} CLI spawn`);
+            resolve(out.trim());
+          } else {
+            logFail(`${cmd} CLI spawn`, `exit code: ${code}`);
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
       });
       child.on('error', (error: any) => {
+        if (!timedOut) {
+          logFail(`${cmd} CLI spawn`, `error: ${error.message}`);
+        }
         resolve(null);
       });
       child.stdin.write(input);
@@ -192,6 +209,7 @@ async function ollamaGenerate(host: string, model: string, prompt: string, opts:
     },
   };
   const url = host + '/api/generate';
+  logStart('Ollama HTTP request');
   const doReq = () => httpRequest(
     url,
     { method: 'POST', headers: { 'content-type': 'application/json' } },
@@ -204,9 +222,14 @@ async function ollamaGenerate(host: string, model: string, prompt: string, opts:
   } catch (e: any) {
     // Transient retry: timeout or 5xx once
     const isTransient = (e && (e.message === 'timeout' || (typeof e.status === 'number' && e.status >= 500)));
-    if (!isTransient) throw e;
+    if (!isTransient) {
+      logFail('Ollama HTTP request', e.message);
+      throw e;
+    }
+    logFail('Ollama HTTP request', `${e.message}, retrying`);
     res = await doReq();
   }
+  logOk('Ollama HTTP request');
   const json = JSON.parse(res || '{}');
   return json?.response ?? '';
 }
@@ -257,15 +280,22 @@ export function __setHttpRequest(fn: typeof _httpRequestImpl) { httpRequest = fn
 function runClaudePrintFlagCapture(prompt: string, timeoutMs: number): Promise<string | null> {
   return new Promise((resolve) => {
     try {
+      logStart('claude -p spawn');
       const child = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       let err = '';
-      const t = setTimeout(() => { child.kill('SIGTERM'); }, timeoutMs);
+      let timedOut = false;
+      const t = setTimeout(() => { 
+        timedOut = true;
+        logFail('claude -p spawn', 'timeout');
+        child.kill('SIGTERM'); 
+      }, timeoutMs);
       child.stdout.on('data', (d) => { out += d.toString(); });
       child.stderr.on('data', (d) => { err += d.toString(); });
       child.on('close', (code) => {
         clearTimeout(t);
-        if (code === 0 && out.trim().length > 0) {
+        if (!timedOut && code === 0 && out.trim().length > 0) {
+          logOk('claude -p spawn');
           const output = out.trim();
           // Check if Claude Code created a file instead of outputting the summary
           const fileMatch = output.match(/^Summary created at `(.+?)`$/);
@@ -284,9 +314,19 @@ function runClaudePrintFlagCapture(prompt: string, timeoutMs: number): Promise<s
             resolve(output);
           }
         }
-        else resolve(null);
+        else {
+          if (!timedOut) {
+            logFail('claude -p spawn', `exit code: ${code}`);
+          }
+          resolve(null);
+        }
       });
-      child.on('error', () => resolve(null));
+      child.on('error', (error: any) => {
+        if (!timedOut) {
+          logFail('claude -p spawn', `error: ${error.message}`);
+        }
+        resolve(null);
+      });
     } catch {
       resolve(null);
     }

@@ -4,6 +4,7 @@ import { spawnSync } from 'child_process';
 import { Captions, YtDlpInfo } from './types';
 import { parseVttToTranscript } from './vtt';
 import { tmpDir, youtubeIdFromUrl } from './utils';
+import { logStart, logOk, logFail } from './logger';
 
 export function hasYtDlp(): boolean {
   const r = spawnSync('yt-dlp', ['--version'], { encoding: 'utf8' });
@@ -44,9 +45,12 @@ function fetchWithYtDlp(url: string): Captions | null {
     url,
   ];
   
+  logStart('yt-dlp auto-sub');
   const r = spawnSync('yt-dlp', subArgs, { encoding: 'utf8' });
   if (r.status !== 0) {
+    logFail('yt-dlp auto-sub', `exit code: ${r.status}`);
     // Try manual-sub if auto-sub failed
+    logStart('yt-dlp manual-sub');
     const r2 = spawnSync('yt-dlp', [
       '--skip-download',
       '--write-sub',
@@ -57,9 +61,13 @@ function fetchWithYtDlp(url: string): Captions | null {
       url
     ], { encoding: 'utf8' });
     if (r2.status !== 0) {
+      logFail('yt-dlp manual-sub', `exit code: ${r2.status}`);
       try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
       return null;
     }
+    logOk('yt-dlp manual-sub');
+  } else {
+    logOk('yt-dlp auto-sub');
   }
   
   // Find and parse the info.json file
