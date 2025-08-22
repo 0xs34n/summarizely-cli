@@ -1,6 +1,6 @@
 {
   "name": "summarizely-cli",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "YouTube summarizer that respects your existing subscriptions. No API keys required.",
   "bin": {
     "summarizely": "bin/summarizely"
